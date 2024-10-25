@@ -1,0 +1,9 @@
+[submodule "thirdparty/mpc"]
+	path = thirdparty/mpc
+	url = https://github.com/RPS98/mpc.git
+[submodule "thirdparty/multirotor_simulator"]
+	path = thirdparty/multirotor_simulator
+	url = https://github.com/RPS98/multirotor_simulator.git
+[submodule "thirdparty/multirotor_simulator_py"]
+	path = thirdparty/multirotor_simulator_py
+	url = https://github.com/RPS98/multirotor_simulator_py.git
