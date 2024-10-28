@@ -37,7 +37,7 @@ __license__ = 'BSD-3-Clause'
 from functools import wraps
 
 import math
-from mpc.mpc_controller import MPC, MPCParams, mpc_lib
+from mpc.mpc_controller import MPC, mpc_lib
 import multirotor_simulator.multirotor_simulator as ms
 import numpy as np
 from utils.ms_example_utils import CsvLogger, SimParams, get_multirotor_simulator
@@ -153,7 +153,7 @@ def test_trajectory_controller(
         first_trajectory_point = None
         for i in range(prediction_steps+1):
             if t_eval >= max_time:
-                t_eval = max_time
+                t_eval = max_time - dt
             elif t_eval <= min_time:
                 t_eval = min_time
             trajectory_point = trajectory_generator.evaluate_trajectory(t_eval)
@@ -211,7 +211,11 @@ if __name__ == '__main__':
     logger = CsvLogger(file_name)
 
     # MPC
-    mpc = MPC(mpc_params)
+    mpc = MPC(
+        prediction_steps=100,
+        prediction_horizon=0.5,
+        params=mpc_params
+    )
 
     # Trajectory generator
     trajectory_generator = get_trajectory_generator(

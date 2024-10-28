@@ -180,6 +180,17 @@ int main(int argc, char **argv) {
   // Initialize MPC
   acados_mpc::MPC mpc = acados_mpc::MPC();
 
+  // Update MPC gains and bounds
+  mpc.get_gains()->set_Q(yaml_data.mpc_data.Q);
+  mpc.get_gains()->set_Q_end(yaml_data.mpc_data.Qe);
+  mpc.get_gains()->set_R(yaml_data.mpc_data.R);
+  mpc.get_bounds()->set_lbu(yaml_data.mpc_data.lbu);
+  mpc.get_bounds()->set_ubu(yaml_data.mpc_data.ubu);
+  mpc.get_online_params()->set_data(yaml_data.mpc_data.p);
+  mpc.update_bounds();
+  mpc.update_gains();
+  mpc.update_online_params();
+
   // Initialize integrator
   acados_mpc::MPCSimSolver simulator = acados_mpc::MPCSimSolver();
 

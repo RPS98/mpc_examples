@@ -114,6 +114,15 @@ std::array<double, 4> compute_path_facing(const Eigen::Vector3d velocity) {
   return {q.w(), q.x(), q.y(), q.z()};
 }
 
+struct YamlMPCData {
+  std::array<double, acados_mpc::MPCGains::Nq> Q;
+  std::array<double, acados_mpc::MPCGains::Nqe> Qe;
+  std::array<double, acados_mpc::MPCGains::Nr> R;
+  std::array<double, acados_mpc::MPCBounds::Nu> lbu;
+  std::array<double, acados_mpc::MPCBounds::Nu> ubu;
+  std::array<double, acados_mpc::MPCOnlineParams::Np> p;
+};
+
 struct YamlData {
   double sim_time;
   double dt;
@@ -122,6 +131,7 @@ struct YamlData {
   bool path_facing;
   double floor_height;
   multirotor::SimulatorParams<double, 4> simulator_params;
+  YamlMPCData mpc_data;
 };
 
 void read_yaml_params(const std::string& file_path, YamlData& data) {
@@ -261,6 +271,31 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
       p.dynamics_params.state.kinematics.orientation;
 
   data.simulator_params = p;
+
+  // Read MPC params
+  std::vector<double> Q   = yaml_config_file["controller"]["mpc"]["Q"].as<std::vector<double>>();
+  std::vector<double> Qe  = yaml_config_file["controller"]["mpc"]["Qe"].as<std::vector<double>>();
+  std::vector<double> R   = yaml_config_file["controller"]["mpc"]["R"].as<std::vector<double>>();
+  std::vector<double> lbu = yaml_config_file["controller"]["mpc"]["lbu"].as<std::vector<double>>();
+  std::vector<double> ubu = yaml_config_file["controller"]["mpc"]["ubu"].as<std::vector<double>>();
+  std::vector<double> po  = yaml_config_file["controller"]["mpc"]["p"].as<std::vector<double>>();
+
+  for (int i = 0; i < acados_mpc::MPCGains::Nq; i++) {
+    data.mpc_data.Q[i] = Q[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCGains::Nqe; i++) {
+    data.mpc_data.Qe[i] = Qe[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCGains::Nr; i++) {
+    data.mpc_data.R[i] = R[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCBounds::Nu; i++) {
+    data.mpc_data.lbu[i] = lbu[i];
+    data.mpc_data.ubu[i] = ubu[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCOnlineParams::Np; i++) {
+    data.mpc_data.p[i] = po[i];
+  }
   return;
 }
 

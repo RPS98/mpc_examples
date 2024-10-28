@@ -90,12 +90,22 @@ std::array<double, 4> compute_path_facing(const Eigen::Vector3d velocity) {
   return {q.w(), q.x(), q.y(), q.z()};
 }
 
+struct YamlMPCData {
+  std::array<double, acados_mpc::MPCGains::Nq> Q;
+  std::array<double, acados_mpc::MPCGains::Nqe> Qe;
+  std::array<double, acados_mpc::MPCGains::Nr> R;
+  std::array<double, acados_mpc::MPCBounds::Nu> lbu;
+  std::array<double, acados_mpc::MPCBounds::Nu> ubu;
+  std::array<double, acados_mpc::MPCOnlineParams::Np> p;
+};
+
 struct YamlData {
   double sim_time;
   double dt;
   double trajectory_generator_max_speed;
   std::vector<Eigen::Vector3d> waypoints;
   bool path_facing;
+  YamlMPCData mpc_data;
 };
 
 void read_yaml_params(const std::string& file_path, YamlData& data) {
@@ -122,6 +132,31 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
   }
 
   data.path_facing = config["sim_config"]["path_facing"].as<bool>();
+
+  // Read MPC params
+  std::vector<double> Q   = config["controller"]["mpc"]["Q"].as<std::vector<double>>();
+  std::vector<double> Qe  = config["controller"]["mpc"]["Qe"].as<std::vector<double>>();
+  std::vector<double> R   = config["controller"]["mpc"]["R"].as<std::vector<double>>();
+  std::vector<double> lbu = config["controller"]["mpc"]["lbu"].as<std::vector<double>>();
+  std::vector<double> ubu = config["controller"]["mpc"]["ubu"].as<std::vector<double>>();
+  std::vector<double> p   = config["controller"]["mpc"]["p"].as<std::vector<double>>();
+
+  for (int i = 0; i < acados_mpc::MPCGains::Nq; i++) {
+    data.mpc_data.Q[i] = Q[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCGains::Nqe; i++) {
+    data.mpc_data.Qe[i] = Qe[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCGains::Nr; i++) {
+    data.mpc_data.R[i] = R[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCBounds::Nu; i++) {
+    data.mpc_data.lbu[i] = lbu[i];
+    data.mpc_data.ubu[i] = ubu[i];
+  }
+  for (int i = 0; i < acados_mpc::MPCOnlineParams::Np; i++) {
+    data.mpc_data.p[i] = p[i];
+  }
 }
 
 DynamicWaypoint::Vector eigen_vector_to_dynamic_waypoint_vector(
@@ -179,12 +214,16 @@ public:
       return;
     }
     file_ << data;
-    if (add_final_comma) file_ << ",";
+    if (add_final_comma) {
+      file_ << ",";
+    }
   }
 
   void add_string(const std::string& data, const bool add_final_comma = true) {
     file_ << data;
-    if (add_final_comma) file_ << ",";
+    if (add_final_comma) {
+      file_ << ",";
+    }
   }
 
   void save(const double time, const MPCData* mpc_data) {
@@ -205,7 +244,9 @@ public:
     // Actuation
     for (int i = 0; i < MPC_NU; i++) {
       bool add_final_comma = true;
-      if (i == MPC_NU - 1) add_final_comma = false;
+      if (i == MPC_NU - 1) {
+        add_final_comma = false;
+      }
       add_double(mpc_data->control.data[i], add_final_comma);
     }
 

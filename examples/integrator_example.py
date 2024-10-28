@@ -37,7 +37,7 @@ __license__ = 'BSD-3-Clause'
 from functools import wraps
 
 import utils.sym_example_utils as utils
-from mpc.mpc_controller import MPC, MPCParams, mpc_lib
+from mpc.mpc_controller import MPC, mpc_lib
 import numpy as np
 from tqdm import tqdm
 
@@ -137,31 +137,23 @@ if __name__ == '__main__':
     logger = utils.CsvLogger(file_name)
 
     # MPC
-    mpc_params = MPCParams(
-        prediction_horizon=0.5,
-        prediction_steps=100,
-        Q=mpc_lib.CaState.get_cost_matrix(
-            position_weight=3000*np.ones(3),
-            orientation_weight=1.0*np.ones(4),
-            linear_velocity_weight=0.0*np.ones(3)
-        ),
-        R=mpc_lib.CaControl.get_cost_matrix(
-            thrust_weight=np.array([1.0]),
-            angular_velocity_weight=1.0*np.ones(3)
-        ),
-        mass=1.0,
-        max_thrust=30.0,
-        min_thrust=1.0,
-        max_w_xy=4*np.pi,
-        min_w_xy=-4*np.pi,
-        max_w_z=4*np.pi,
-        min_w_z=-4*np.pi
+    mpc_params = mpc_lib.AcadosMPCParams(
+        Q=yaml_data.mpc_gains.Q,
+        Qe=yaml_data.mpc_gains.Qe,
+        R=yaml_data.mpc_gains.R,
+        lbu=yaml_data.mpc_gains.lbu,
+        ubu=yaml_data.mpc_gains.ubu,
+        p=yaml_data.mpc_gains.p
     )
-    mpc = MPC(mpc_params)
+    mpc = MPC(
+        prediction_steps=100,
+        prediction_horizon=0.5,
+        params=mpc_params
+    )
 
     # Simulator
-    Tf = mpc_params.prediction_horizon
-    N = mpc_params.prediction_steps
+    Tf = mpc.prediction_horizon
+    N = mpc.prediction_steps
     dt = Tf / N
     simulator = mpc.export_integrador(dt)
 

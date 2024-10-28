@@ -34,6 +34,8 @@ __authors__ = 'Rafael Pérez Seguí'
 __copyright__ = 'Copyright (c) 2022 Universidad Politécnica de Madrid'
 __license__ = 'BSD-3-Clause'
 
+from dataclasses import dataclass
+
 import math
 import yaml
 import os
@@ -86,6 +88,15 @@ def compute_path_facing(velocity: np.ndarray) -> list:
     q = euler_to_quaternion(roll, pitch, yaw)
     return np.array([q.w, q.x, q.y, q.z])
 
+@dataclass
+class MPCGains:
+    Q: np.ndarray = np.zeros((10, 10))
+    Qe: np.ndarray = np.zeros((10, 10))
+    R: np.ndarray = np.zeros((4, 4))
+    lbu: np.ndarray = np.zeros(4)
+    ubu: np.ndarray = np.zeros(4)
+    p: np.ndarray = np.zeros(1)
+
 class YamlData:
     def __init__(self):
         self.sim_time = 0.0
@@ -93,6 +104,7 @@ class YamlData:
         self.trajectory_generator_max_speed = 0.0
         self.waypoints = []
         self.path_facing = False
+        self.mpc_gains = MPCGains()
 
 def read_yaml_params(file_path: str):
     """
@@ -119,6 +131,13 @@ def read_yaml_params(file_path: str):
         data.waypoints.append(np.array([waypoint[0], waypoint[1], waypoint[2]]))
 
     data.path_facing = config["sim_config"]["path_facing"]
+
+    data.mpc_gains.Q = np.diag(np.array(config["controller"]["mpc"]["Q"], dtype=np.float64))
+    data.mpc_gains.Qe = np.diag(np.array(config["controller"]["mpc"]["Qe"], dtype=np.float64))
+    data.mpc_gains.R = np.diag(np.array(config["controller"]["mpc"]["R"], dtype=np.float64))
+    data.mpc_gains.lbu = np.array(config["controller"]["mpc"]["lbu"], dtype=np.float64)
+    data.mpc_gains.ubu = np.array(config["controller"]["mpc"]["ubu"], dtype=np.float64)
+    data.mpc_gains.p = np.array(config["controller"]["mpc"]["p"], dtype=np.float64)
 
     return data
 

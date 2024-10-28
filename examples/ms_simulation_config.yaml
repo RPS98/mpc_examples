@@ -53,20 +53,12 @@ controller:
     antiwindup_cte: [1.0, 1.0, 1.0]
     linear_acceleration_limit: [0.0, 0.0, 0.0] # m/s^2
   mpc:
-    prediction_horizon: 0.5  # Prediction horizon in seconds
-    prediction_steps: 100  # Number of steps to predict
-    Qp: [3000, 3000, 3000]
-    Qq: [1.0, 1.0, 1.0, 1.0]
-    Qv: [0.0, 0.0, 0.0]
-    Rt: [1.0]
-    Rw: [1.0, 1.0, 1.0]
-    vehicle_mass: 1.0 # kg
-    max_thrust: 30.0 # N
-    min_thrust: 1.0 # N
-    max_w_z: 12.0 # rad/s
-    min_w_z: -12.0 # rad/s
-    max_w_xy: 12.0 # m/s
-    min_w_xy: -12.0 # m/s
+    Q: [3000.0, 3000.0, 3000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # Weight for internal states: [x, y, z, qw, qx, qy, qz, vx, vy, vz]
+    Qe: [3000.0, 3000.0, 3000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # Weight for end states: [x, y, z, qw, qx, qy, qz, vx, vy, vz]
+    R: [1.0, 1.0, 1.0, 1.0] # Weight for control inputs: [thrust, wx, wy, wz]
+    lbu: [0.0, -12.0, -12.0, -12.0] # Lower bounds for control inputs: [thrust, wx, wy, wz]
+    ubu: [30.0, 12.0, 12.0, 12.0] # Upper bounds for control inputs: [thrust, wx, wy, wz]
+    p: [1.0] # Online parameter: [mass]
 imu:
   gyro_noise_var: 0.0 # rad/s
   accel_noise_var: 0.0 # m/s^2

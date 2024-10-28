@@ -38,7 +38,7 @@ import multirotor_simulator.multirotor_simulator as ms
 import multirotor_simulator.multirotor_simulator_utils as ms_utils
 import numpy as np
 from dataclasses import dataclass, field
-from mpc.mpc_controller import MPCParams, mpc_lib
+from mpc.mpc_controller import mpc_lib
 from pyquaternion import Quaternion
 import yaml
 
@@ -198,49 +198,20 @@ def read_simulator_params(config_file_path: str) \
     )
 
     # MPC params
-    config_controller = config['controller']
-    config_mpc = config_controller['mpc']
-    prediction_horizon = config_mpc['prediction_horizon']
-    prediction_steps = config_mpc['prediction_steps']
-    Qp = np.array(config_mpc['Qp'])
-    Qq = np.array(config_mpc['Qq'])
-    Qv = np.array(config_mpc['Qv'])
-    Rt = np.array(config_mpc['Rt'])
-    Rw = np.array(config_mpc['Rw'])
-    vehicle_mass = config_mpc['vehicle_mass']
-    max_thrust = config_mpc['max_thrust']
-    min_thrust = config_mpc['min_thrust']
-    max_w_z = config_mpc['max_w_z']
-    min_w_z = config_mpc['min_w_z']
-    max_w_xy = config_mpc['max_w_xy']
-    min_w_xy = config_mpc['min_w_xy']
-
-    mpc_params = MPCParams(
-        prediction_horizon=prediction_horizon,
-        prediction_steps=prediction_steps,
-        Q=mpc_lib.CaState.get_cost_matrix(
-            position_weight=Qp,
-            orientation_weight=Qq,
-            linear_velocity_weight=Qv
-        ),
-        R=mpc_lib.CaControl.get_cost_matrix(
-            thrust_weight=Rt,
-            angular_velocity_weight=Rw
-        ),
-        mass=vehicle_mass,
-        max_thrust=max_thrust,
-        min_thrust=min_thrust,
-        max_w_xy=max_w_xy,
-        min_w_xy=min_w_xy,
-        max_w_z=max_w_z,
-        min_w_z=min_w_z
+    mpc_params = mpc_lib.AcadosMPCParams(
+        Q=np.diag(np.array(config_controller['mpc']['Q'], dtype=np.float64)),
+        Qe=np.diag(np.array(config_controller['mpc']['Qe'], dtype=np.float64)),
+        R=np.diag(np.array(config_controller['mpc']['R'], dtype=np.float64)),
+        lbu=np.array(config_controller['mpc']['lbu'], dtype=np.float64),
+        ubu=np.array(config_controller['mpc']['ubu'], dtype=np.float64),
+        p=np.array(config_controller['mpc']['p'], dtype=np.float64)
     )
 
     return simulation_params, sim_params, mpc_params
 
 
 def get_multirotor_simulator(config_file_path: str) \
-        -> tuple[ms.Simulator, SimParams, MPCParams]:
+        -> tuple[ms.Simulator, SimParams, mpc_lib.AcadosMPCParams]:
     """
     Get a multirotor simulator with the parameters from a yaml file.
 
