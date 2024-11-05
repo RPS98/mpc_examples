@@ -163,6 +163,7 @@ if __name__ == '__main__':
         waypoints=yaml_data.waypoints,
         speed=yaml_data.trajectory_generator_max_speed
     )
+    trajectory_generator.set_path_facing(yaml_data.path_facing)
     
     test_trajectory_controller(
         logger,

@@ -94,12 +94,13 @@ void print_progress_bar(float progress) {
   std::cout << "[";
   int pos = bar_width * progress;
   for (int i = 0; i < bar_width; ++i) {
-    if (i < pos)
+    if (i < pos) {
       std::cout << "=";
-    else if (i == pos)
+    } else if (i == pos) {
       std::cout << ">";
-    else
+    } else {
       std::cout << " ";
+    }
   }
   std::cout << "] " << int(progress * 100.0) << " %\r";
 }
@@ -255,6 +256,9 @@ int main(int argc, char** argv) {
 
   // Initialize MPC
   acados_mpc::MPC mpc = acados_mpc::MPC();
+
+  std::cout << "Prediction steps: " << mpc.get_prediction_steps() << std::endl;
+  std::cout << "Prediction time step: " << mpc.get_prediction_time_step() << std::endl;
 
   // Update MPC gains and bounds
   mpc.get_gains()->set_Q(yaml_data.mpc_data.Q);

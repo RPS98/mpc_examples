@@ -23,8 +23,9 @@ def plotDrone3D(ax, X, q):
     :param X: Position [x, y, z].
     :param q: Quaternion [qw, qx, qy, qz].
     """
-    l = 0.046  # arm length
+    length = 0.046  # arm length
     r = 0.02   # rotor length
+    heading_length = 0.2
 
     x, y, z = X
     qw, qx, qy, qz = q
@@ -37,11 +38,11 @@ def plotDrone3D(ax, X, q):
     ])
 
     # Position of rotors and the center of the body
-    c1 = np.array([x, y, z]) + R @ np.array([r, 0, 0])
-    q1 = np.array([x, y, z]) + R @ np.array([l, l, 0])
-    q2 = np.array([x, y, z]) + R @ np.array([-l, -l, 0])
-    q3 = np.array([x, y, z]) + R @ np.array([l, -l, 0])
-    q4 = np.array([x, y, z]) + R @ np.array([-l, l, 0])
+    c1 = np.array([x, y, z]) + R @ np.array([heading_length, 0, 0])
+    q1 = np.array([x, y, z]) + R @ np.array([length, length, 0])
+    q2 = np.array([x, y, z]) + R @ np.array([-length, -length, 0])
+    q3 = np.array([x, y, z]) + R @ np.array([length, -length, 0])
+    q4 = np.array([x, y, z]) + R @ np.array([-length, length, 0])
 
     # Rotor end points
     r1, r2, r3, r4 = [q + R @ np.array([0, 0, r]) for q in [q1, q2, q3, q4]]

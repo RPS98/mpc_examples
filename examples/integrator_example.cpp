@@ -57,17 +57,23 @@ namespace acados_mpc_examples {
 using DynamicTrajectory = dynamic_traj_generator::DynamicTrajectory;
 using DynamicWaypoint   = dynamic_traj_generator::DynamicWaypoint;
 
-void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References &references,
-                                   MPCData *mpc_data,
-                                   int index) {
+void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& references,
+                                   acados_mpc::MPCData* mpc_data,
+                                   int index,
+                                   bool path_facing = false) {
+  std::array<double, 4> q = {1.0, 0.0, 0.0, 0.0};
+  if (path_facing) {
+    q = acados_mpc_examples::compute_path_facing(references.velocity);
+  }
+
   if (index == MPC_N) {
     mpc_data->reference_end.set_data(0, references.position.x());
     mpc_data->reference_end.set_data(1, references.position.y());
     mpc_data->reference_end.set_data(2, references.position.z());
-    mpc_data->reference_end.set_data(3, 1.0);
-    mpc_data->reference_end.set_data(4, 0.0);
-    mpc_data->reference_end.set_data(5, 0.0);
-    mpc_data->reference_end.set_data(6, 0.0);
+    mpc_data->reference_end.set_data(3, q[0]);
+    mpc_data->reference_end.set_data(4, q[1]);
+    mpc_data->reference_end.set_data(5, q[2]);
+    mpc_data->reference_end.set_data(6, q[3]);
     mpc_data->reference_end.set_data(7, references.velocity.x());
     mpc_data->reference_end.set_data(8, references.velocity.y());
     mpc_data->reference_end.set_data(9, references.velocity.z());
@@ -78,26 +84,26 @@ void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References &ref
   mpc_data->reference.set_data(index, 0, references.position.x());
   mpc_data->reference.set_data(index, 1, references.position.y());
   mpc_data->reference.set_data(index, 2, references.position.z());
-  mpc_data->reference.set_data(index, 3, 1.0);
-  mpc_data->reference.set_data(index, 4, 0.0);
-  mpc_data->reference.set_data(index, 5, 0.0);
-  mpc_data->reference.set_data(index, 6, 0.0);
+  mpc_data->reference.set_data(3, q[0]);
+  mpc_data->reference.set_data(4, q[1]);
+  mpc_data->reference.set_data(5, q[2]);
+  mpc_data->reference.set_data(6, q[3]);
   mpc_data->reference.set_data(index, 7, references.velocity.x());
   mpc_data->reference.set_data(index, 8, references.velocity.y());
   mpc_data->reference.set_data(index, 9, references.velocity.z());
 }
 
-void test_mpc_controller(CsvLogger &logger,
-                         MPC &mpc,
-                         MPCSimSolver &simulator,
-                         std::unique_ptr<DynamicTrajectory> &trajectory_generator,
-                         YamlData &yaml_data) {
+void test_mpc_controller(CsvLogger& logger,
+                         MPC& mpc,
+                         MPCSimSolver& simulator,
+                         std::unique_ptr<DynamicTrajectory>& trajectory_generator,
+                         YamlData& yaml_data) {
   // Initialize dynamic trajectory generator
   dynamic_traj_generator::References references;
   double tg_max_time = trajectory_generator->getMaxTime();
 
   // MPC Parameters
-  MPCData *mpc_data       = mpc.get_data();
+  MPCData* mpc_data       = mpc.get_data();
   double prediction_steps = mpc.get_prediction_steps();
   // double prediction_horizon = mpc.get_prediction_horizon();
   double tf = mpc.get_prediction_time_step();
@@ -129,7 +135,7 @@ void test_mpc_controller(CsvLogger &logger,
         t_eval = min_time;
       }
       trajectory_generator->evaluateTrajectory(t_eval, references);
-      traj_generator_ref_to_mpc_ref(references, mpc_data, i);
+      traj_generator_ref_to_mpc_ref(references, mpc_data, i, yaml_data.path_facing);
       t_eval += tf;
     }
 
@@ -167,7 +173,7 @@ void test_mpc_controller(CsvLogger &logger,
 }  // namespace acados_mpc_examples
 }  // namespace acados_mpc
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   // Logger
   std::string file_name = "mpc_log.csv";
   acados_mpc::acados_mpc_examples::CsvLogger logger(file_name);
