@@ -55,15 +55,21 @@ using DynamicWaypoint   = dynamic_traj_generator::DynamicWaypoint;
 
 void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& references,
                                    acados_mpc::MPCData* mpc_data,
-                                   int index) {
+                                   int index,
+                                   bool path_facing = false) {
+  std::array<double, 4> q = {1.0, 0.0, 0.0, 0.0};
+  if (path_facing) {
+    q = acados_mpc_examples::compute_path_facing(references.velocity);
+  }
+
   if (index == MPC_N) {
     mpc_data->reference_end.set_data(0, references.position.x());
     mpc_data->reference_end.set_data(1, references.position.y());
     mpc_data->reference_end.set_data(2, references.position.z());
-    mpc_data->reference_end.set_data(3, 1.0);
-    mpc_data->reference_end.set_data(4, 0.0);
-    mpc_data->reference_end.set_data(5, 0.0);
-    mpc_data->reference_end.set_data(6, 0.0);
+    mpc_data->reference_end.set_data(3, q[0]);
+    mpc_data->reference_end.set_data(4, q[1]);
+    mpc_data->reference_end.set_data(5, q[2]);
+    mpc_data->reference_end.set_data(6, q[3]);
     mpc_data->reference_end.set_data(7, references.velocity.x());
     mpc_data->reference_end.set_data(8, references.velocity.y());
     mpc_data->reference_end.set_data(9, references.velocity.z());
@@ -74,10 +80,10 @@ void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& ref
   mpc_data->reference.set_data(index, 0, references.position.x());
   mpc_data->reference.set_data(index, 1, references.position.y());
   mpc_data->reference.set_data(index, 2, references.position.z());
-  mpc_data->reference.set_data(index, 3, 1.0);
-  mpc_data->reference.set_data(index, 4, 0.0);
-  mpc_data->reference.set_data(index, 5, 0.0);
-  mpc_data->reference.set_data(index, 6, 0.0);
+  mpc_data->reference.set_data(3, q[0]);
+  mpc_data->reference.set_data(4, q[1]);
+  mpc_data->reference.set_data(5, q[2]);
+  mpc_data->reference.set_data(6, q[3]);
   mpc_data->reference.set_data(index, 7, references.velocity.x());
   mpc_data->reference.set_data(index, 8, references.velocity.y());
   mpc_data->reference.set_data(index, 9, references.velocity.z());
@@ -157,7 +163,7 @@ void test_mpc_controller(CsvLogger& logger,
         t_eval = min_time;
       }
       trajectory_generator->evaluateTrajectory(t_eval, references);
-      traj_generator_ref_to_mpc_ref(references, mpc_data, i);
+      traj_generator_ref_to_mpc_ref(references, mpc_data, i, yaml_data.path_facing);
       t_eval += tf;
       if (init_ref) {
         init_references = references;
@@ -212,6 +218,8 @@ void test_mpc_controller(CsvLogger& logger,
     // Update references for debugging
     simulator.set_reference_trajectory(init_references.position, init_references.velocity,
                                        init_references.acceleration);
+    simulator.set_reference_yaw_angle(
+        atan2(init_references.velocity.y(), init_references.velocity.x()));
 
     logger.save(t, simulator);
   }
@@ -236,7 +244,9 @@ int main(int argc, char** argv) {
 
   // Params
   acados_mpc_examples::YamlData yaml_data;
-  acados_mpc_examples::read_yaml_params("examples/ms_simulation_config.yaml", yaml_data);
+  acados_mpc_examples::read_yaml_params(
+      "/home/rafa/mpc_examples/examples/ms_simulation_config.yaml", yaml_data);
+  // acados_mpc_examples::read_yaml_params("examples/ms_simulation_config.yaml", yaml_data);
 
   // Initialize simulator
   multirotor::Simulator simulator = multirotor::Simulator(yaml_data.simulator_params);

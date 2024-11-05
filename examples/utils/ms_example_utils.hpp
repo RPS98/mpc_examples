@@ -296,6 +296,9 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
   for (int i = 0; i < acados_mpc::MPCOnlineParams::Np; i++) {
     data.mpc_data.p[i] = po[i];
   }
+
+  data.path_facing = yaml_config_file["sim_config"]["path_facing"].as<bool>();
+
   return;
 }
 

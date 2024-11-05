@@ -43,7 +43,6 @@ import numpy as np
 from utils.ms_example_utils import CsvLogger, SimParams, get_multirotor_simulator
 from utils.sym_example_utils import get_trajectory_generator
 from tqdm import tqdm
-import utils.trajectory_generator as dtb
 
 
 def Euler_to_quaternion(roll: float, pitch: float, yaw: float) -> list:
