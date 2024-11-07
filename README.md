@@ -45,7 +45,7 @@ python3 examples/multirotor_example.py
 You can check the results in the `ms_mpc_log.csv` file, and plot them with:
 
 ```bash
-python3 examples/utils/ms_plot_resutls.py
+python3 mpc_examples/utils/plot_resutls.py
 ```
 
 ## Development
