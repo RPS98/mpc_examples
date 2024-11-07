@@ -44,7 +44,7 @@
 
 #include "acados_mpc/acados_mpc.hpp"
 
-#include "utils/ms_example_utils.hpp"
+#include "utils/multirotor_utils.hpp"
 
 namespace acados_mpc_examples {
 
@@ -63,30 +63,56 @@ void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& ref
   }
 
   if (index == MPC_N) {
+    // Position
     mpc_data->reference_end.set_data(0, references.position.x());
     mpc_data->reference_end.set_data(1, references.position.y());
     mpc_data->reference_end.set_data(2, references.position.z());
-    mpc_data->reference_end.set_data(3, q[0]);
-    mpc_data->reference_end.set_data(4, q[1]);
-    mpc_data->reference_end.set_data(5, q[2]);
-    mpc_data->reference_end.set_data(6, q[3]);
-    mpc_data->reference_end.set_data(7, references.velocity.x());
-    mpc_data->reference_end.set_data(8, references.velocity.y());
-    mpc_data->reference_end.set_data(9, references.velocity.z());
+
+    // Attitude difference
+    mpc_data->reference_end.set_data(3, 0.0);
+    mpc_data->reference_end.set_data(4, 0.0);
+    mpc_data->reference_end.set_data(5, 0.0);
+
+    // Velocity
+    mpc_data->reference_end.set_data(6, references.velocity.x());
+    mpc_data->reference_end.set_data(7, references.velocity.y());
+    mpc_data->reference_end.set_data(8, references.velocity.z());
+
+    // Orientation
+    mpc_data->p_params.set_data(0, 1.0);
+    mpc_data->p_params.set_data(1, q[0]);
+    mpc_data->p_params.set_data(2, q[1]);
+    mpc_data->p_params.set_data(3, q[2]);
+    mpc_data->p_params.set_data(4, q[3]);
+
     return;
   } else if (index > MPC_N) {
     throw std::out_of_range("Index out of range.");
   }
+  // Position
   mpc_data->reference.set_data(index, 0, references.position.x());
   mpc_data->reference.set_data(index, 1, references.position.y());
   mpc_data->reference.set_data(index, 2, references.position.z());
-  mpc_data->reference.set_data(3, q[0]);
-  mpc_data->reference.set_data(4, q[1]);
-  mpc_data->reference.set_data(5, q[2]);
-  mpc_data->reference.set_data(6, q[3]);
-  mpc_data->reference.set_data(index, 7, references.velocity.x());
-  mpc_data->reference.set_data(index, 8, references.velocity.y());
-  mpc_data->reference.set_data(index, 9, references.velocity.z());
+
+  // Attitude difference
+  mpc_data->reference.set_data(3, 0.0);
+  mpc_data->reference.set_data(4, 0.0);
+  mpc_data->reference.set_data(5, 0.0);
+
+  // Velocity
+  mpc_data->reference.set_data(index, 6, references.velocity.x());
+  mpc_data->reference.set_data(index, 7, references.velocity.y());
+  mpc_data->reference.set_data(index, 8, references.velocity.z());
+
+  // Control
+  mpc_data->reference.set_data(index, 9, mpc_data->p_params.data[0] * 9.81);  // Thrust
+
+  // Orientation
+  mpc_data->p_params.set_data(0, 1.0);
+  mpc_data->p_params.set_data(1, q[0]);
+  mpc_data->p_params.set_data(2, q[1]);
+  mpc_data->p_params.set_data(3, q[2]);
+  mpc_data->p_params.set_data(4, q[3]);
 }
 
 void print_progress_bar(float progress) {
@@ -110,10 +136,6 @@ void test_mpc_controller(CsvLogger& logger,
                          multirotor::Simulator<double, 4>& simulator,
                          std::unique_ptr<DynamicTrajectory>& trajectory_generator,
                          const YamlData& yaml_data) {
-  // Get simulation parameters
-  double sim_max_time = yaml_data.sim_time;
-  double dt           = yaml_data.dt;
-
   // MPC Parameters
   acados_mpc::MPCData* mpc_data = mpc.get_data();
   int prediction_steps          = mpc.get_prediction_steps();
@@ -140,7 +162,7 @@ void test_mpc_controller(CsvLogger& logger,
                       pitch_ref, yaw_ref);
 
   // Time measurement
-  const std::size_t n_iterations = static_cast<std::size_t>(yaml_data.sim_time / yaml_data.dt);
+  const std::size_t n_iterations = static_cast<std::size_t>(max_time / tf);
   std::vector<double> mpc_times;
   mpc_times.reserve(n_iterations);
   std::vector<double> sim_times;
@@ -148,8 +170,8 @@ void test_mpc_controller(CsvLogger& logger,
   std::vector<double> total_times;
   total_times.reserve(n_iterations);
 
-  for (double t = 0; t < yaml_data.sim_time; t += yaml_data.dt) {
-    print_progress_bar(t / yaml_data.sim_time);
+  for (double t = 0; t < max_time; t += tf) {
+    print_progress_bar(t / max_time);
     auto iter_start = std::chrono::high_resolution_clock::now();
 
     double t_eval = t;
@@ -159,7 +181,7 @@ void test_mpc_controller(CsvLogger& logger,
     // yref from 0 to N-1 (N steps) and yref_N from N to N
     for (int i = 0; i < prediction_steps + 1; i++) {
       if (t_eval >= max_time) {
-        t_eval = max_time - yaml_data.dt;
+        t_eval = max_time - tf;
       } else if (t_eval <= min_time) {
         t_eval = min_time;
       }
@@ -203,10 +225,10 @@ void test_mpc_controller(CsvLogger& logger,
     simulator.set_reference_acro(thrust, angular_velocity);
 
     // Update simulator
-    simulator.update_controller(dt);
-    simulator.update_dynamics(dt);
-    simulator.update_imu(dt);
-    simulator.update_inertial_odometry(dt);
+    simulator.update_controller(tf);
+    simulator.update_dynamics(tf);
+    simulator.update_imu(tf);
+    simulator.update_inertial_odometry(tf);
     auto sim_end = std::chrono::high_resolution_clock::now();
 
     std::chrono::duration<double> mpc_duration   = mpc_end - mpc_start;
@@ -239,15 +261,11 @@ void test_mpc_controller(CsvLogger& logger,
 }  // namespace acados_mpc_examples
 
 int main(int argc, char** argv) {
-  // Logger
-  std::string file_name = "ms_mpc_log.csv";
-  acados_mpc_examples::CsvLogger logger(file_name);
-
   // Params
   acados_mpc_examples::YamlData yaml_data;
+  // acados_mpc_examples::read_yaml_params("mpc_examples/simulation_config.yaml", yaml_data);
   acados_mpc_examples::read_yaml_params(
-      "/home/rafa/mpc_examples/examples/ms_simulation_config.yaml", yaml_data);
-  // acados_mpc_examples::read_yaml_params("examples/ms_simulation_config.yaml", yaml_data);
+      "/home/rafa/mpc_examples/mpc_examples/simulation_config.yaml", yaml_data);
 
   // Initialize simulator
   multirotor::Simulator simulator = multirotor::Simulator(yaml_data.simulator_params);
@@ -266,14 +284,16 @@ int main(int argc, char** argv) {
   mpc.get_gains()->set_R(yaml_data.mpc_data.R);
   mpc.get_bounds()->set_lbu(yaml_data.mpc_data.lbu);
   mpc.get_bounds()->set_ubu(yaml_data.mpc_data.ubu);
-  mpc.get_online_params()->set_data(yaml_data.mpc_data.p);
   mpc.update_bounds();
   mpc.update_gains();
-  mpc.update_online_params();
 
   // Initialize trajectory generator
   auto trajectory_generator = acados_mpc_examples::get_trajectory_generator(
       Eigen::Vector3d::Zero(), yaml_data.waypoints, yaml_data.trajectory_generator_max_speed);
+
+  // Logger
+  std::string file_name = "ms_mpc_log.csv";
+  acados_mpc_examples::CsvLogger logger(file_name);
 
   acados_mpc_examples::test_mpc_controller(logger, mpc, simulator, trajectory_generator, yaml_data);
   return 0;

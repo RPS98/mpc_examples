@@ -115,17 +115,15 @@ std::array<double, 4> compute_path_facing(const Eigen::Vector3d velocity) {
 }
 
 struct YamlMPCData {
-  std::array<double, acados_mpc::MPCGains::Nq> Q;
-  std::array<double, acados_mpc::MPCGains::Nqe> Qe;
-  std::array<double, acados_mpc::MPCGains::Nr> R;
-  std::array<double, acados_mpc::MPCBounds::Nu> lbu;
-  std::array<double, acados_mpc::MPCBounds::Nu> ubu;
-  std::array<double, acados_mpc::MPCOnlineParams::Np> p;
+  std::array<double, acados_mpc::Gains::Nq> Q;
+  std::array<double, acados_mpc::Gains::Nqe> Qe;
+  std::array<double, acados_mpc::Gains::Nr> R;
+  std::array<double, acados_mpc::Bounds::Nu> lbu;
+  std::array<double, acados_mpc::Bounds::Nu> ubu;
+  std::array<double, acados_mpc::OnlineParams::Np> p;
 };
 
 struct YamlData {
-  double sim_time;
-  double dt;
   double trajectory_generator_max_speed;
   std::vector<Eigen::Vector3d> waypoints;
   bool path_facing;
@@ -150,8 +148,6 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
   data.floor_height = yaml_config_file["sim_config"]["floor_height"].as<double>();
 
   // Trajectory generator
-  data.sim_time = yaml_config_file["sim_config"]["sim_time"].as<double>();
-  data.dt       = yaml_config_file["sim_config"]["dt"].as<double>();
   data.trajectory_generator_max_speed =
       yaml_config_file["sim_config"]["trajectory_generator_max_speed"].as<double>();
 
@@ -280,20 +276,20 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
   std::vector<double> ubu = yaml_config_file["controller"]["mpc"]["ubu"].as<std::vector<double>>();
   std::vector<double> po  = yaml_config_file["controller"]["mpc"]["p"].as<std::vector<double>>();
 
-  for (int i = 0; i < acados_mpc::MPCGains::Nq; i++) {
+  for (int i = 0; i < acados_mpc::Gains::Nq; i++) {
     data.mpc_data.Q[i] = Q[i];
   }
-  for (int i = 0; i < acados_mpc::MPCGains::Nqe; i++) {
+  for (int i = 0; i < acados_mpc::Gains::Nqe; i++) {
     data.mpc_data.Qe[i] = Qe[i];
   }
-  for (int i = 0; i < acados_mpc::MPCGains::Nr; i++) {
+  for (int i = 0; i < acados_mpc::Gains::Nr; i++) {
     data.mpc_data.R[i] = R[i];
   }
-  for (int i = 0; i < acados_mpc::MPCBounds::Nu; i++) {
+  for (int i = 0; i < acados_mpc::Bounds::Nu; i++) {
     data.mpc_data.lbu[i] = lbu[i];
     data.mpc_data.ubu[i] = ubu[i];
   }
-  for (int i = 0; i < acados_mpc::MPCOnlineParams::Np; i++) {
+  for (int i = 0; i < acados_mpc::OnlineParams::Np; i++) {
     data.mpc_data.p[i] = po[i];
   }
 

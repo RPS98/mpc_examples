@@ -113,8 +113,9 @@ def plot_drone_3d(position, orientation, axs):
     :param orientaytion: Quaternion [qw, qx, qy, qz].
     :param axs: Matplotlib 3D axis object.
     """
-    l = 0.1  # arm length
+    length = 0.046  # arm length
     r = 0.05   # rotor length
+    heading_length = 0.2
 
     x, y, z = position
     qw, qx, qy, qz = orientation
@@ -127,11 +128,11 @@ def plot_drone_3d(position, orientation, axs):
     ])
 
     # Position of rotors and the center of the body
-    c1 = np.array([x, y, z]) + R @ np.array([r, 0, 0])
-    q1 = np.array([x, y, z]) + R @ np.array([l, l, 0])
-    q2 = np.array([x, y, z]) + R @ np.array([-l, -l, 0])
-    q3 = np.array([x, y, z]) + R @ np.array([l, -l, 0])
-    q4 = np.array([x, y, z]) + R @ np.array([-l, l, 0])
+    c1 = np.array([x, y, z]) + R @ np.array([heading_length, 0, 0])
+    q1 = np.array([x, y, z]) + R @ np.array([length, length, 0])
+    q2 = np.array([x, y, z]) + R @ np.array([-length, -length, 0])
+    q3 = np.array([x, y, z]) + R @ np.array([length, -length, 0])
+    q4 = np.array([x, y, z]) + R @ np.array([-length, length, 0])
 
     # Rotor end points
     r1, r2, r3, r4 = [q + R @ np.array([0, 0, r]) for q in [q1, q2, q3, q4]]
@@ -168,7 +169,7 @@ def plot_values_3d(data, values, title, axs, plot_drone=True):
     if plot_drone:
         # Plot the drone at intervals
         NUM_STEPS = len(x_values)
-        MEAS_EVERY_STEPS = max(1, NUM_STEPS // 20)  # Plot drone every 50% of the steps
+        MEAS_EVERY_STEPS = max(1, NUM_STEPS // 100)  # Plot drone every 50% of the steps
         
         for step in range(0, NUM_STEPS, MEAS_EVERY_STEPS):
             position = np.array([x_values[step], y_values[step], z_values[step]])

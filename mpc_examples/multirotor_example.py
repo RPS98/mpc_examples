@@ -40,8 +40,9 @@ import math
 from mpc.mpc_controller import MPC, mpc_lib
 import multirotor_simulator.multirotor_simulator as ms
 import numpy as np
-from utils.ms_example_utils import CsvLogger, SimParams, get_multirotor_simulator
-from utils.sym_example_utils import get_trajectory_generator
+from utils.multirotor_utils import CsvLogger, SimParams, get_multirotor_simulator
+from examples.utils.utils import get_trajectory_generator
+import time
 from tqdm import tqdm
 
 
@@ -92,7 +93,7 @@ def trajectory_point_to_mpc_reference(trajectory_point):
 def progress_bar(func):
     @wraps(func)
     def wrapper(logger, mpc, simulator, trajectory_generator, sim_params, *args, **kwargs):
-        sim_max_t = sim_params.sim_time
+        sim_max_t = trajectory_generator.get_max_time()
 
         pbar = tqdm(total=sim_max_t, desc=f'Progress {func.__name__}', unit='iter',
                     bar_format='{l_bar}{bar} | {n:.4f}/{total:.2f} '
@@ -114,10 +115,6 @@ def test_trajectory_controller(
         sim_params: SimParams,
         pbar):
     """Test trajectory controller."""
-    # Get simulation parameters
-    sim_max_t = sim_params.sim_time  # Sim time in seconds
-    dt = sim_params.dt  # Time step in seconds
-
     # MPC params
     prediction_steps = mpc.prediction_steps
     prediction_horizon = mpc.prediction_horizon
@@ -139,20 +136,22 @@ def test_trajectory_controller(
 
     # Update simulator
     for i in range(10):
-        simulator.update_controller(dt)
-        simulator.update_dynamics(dt)
-        simulator.update_imu(dt)
-        simulator.update_inertial_odometry(dt)
+        simulator.update_controller(tf)
+        simulator.update_dynamics(tf)
+        simulator.update_imu(tf)
+        simulator.update_inertial_odometry(tf)
+
+    mpc_solve_times = np.zeros(0)
 
     t = 0.0  # Sim time in seconds
     logger.save(t, simulator)
-    while t < sim_max_t:
+    while t < trajectory_generator.get_max_time():
         t_eval = t
         reference_trajectory = np.zeros((prediction_steps+1, mpc.x_dim))
         first_trajectory_point = None
         for i in range(prediction_steps+1):
             if t_eval >= max_time:
-                t_eval = max_time - dt
+                t_eval = max_time - tf
             elif t_eval <= min_time:
                 t_eval = min_time
             trajectory_point = trajectory_generator.evaluate_trajectory(t_eval)
@@ -170,10 +169,12 @@ def test_trajectory_controller(
                 [orientation.w, orientation.x, orientation.y, orientation.z]),
             linear_velocity=simulator.get_state().kinematics.linear_velocity)
 
+        current_time = time.time()
         u0 = mpc.compute_control_action(
             state=state,
             reference_trajectory_intermediate=reference_trajectory[:-1],
             reference_trajectory_final=reference_trajectory[-1][:mpc.x_dim])
+        mpc_solve_times = np.append(mpc_solve_times, time.time() - current_time)
 
         simulator.set_reference_acro(
             thrust=u0[0],
@@ -189,21 +190,21 @@ def test_trajectory_controller(
         simulator.set_reference_yaw_angle(ref_yaw)
 
         # Update simulator
-        simulator.update_controller(dt)
-        simulator.update_dynamics(dt)
-        simulator.update_imu(dt)
-        simulator.update_inertial_odometry(dt)
+        simulator.update_controller(tf)
+        simulator.update_dynamics(tf)
+        simulator.update_imu(tf)
+        simulator.update_inertial_odometry(tf)
 
-        t += dt
+        t += tf
         logger.save(t, simulator)
-        pbar.update(dt)
+        pbar.update(tf)
     logger.close()
 
 
 if __name__ == '__main__':
     # Params
     simulator, sim_params, mpc_params = \
-        get_multirotor_simulator('examples/ms_simulation_config.yaml')
+        get_multirotor_simulator('mpc_examples/simulation_config.yaml')
 
     # Logger
     file_name = 'ms_mpc_log.csv'
@@ -222,6 +223,7 @@ if __name__ == '__main__':
         waypoints=sim_params.trajectory_generator_waypoints,
         speed=sim_params.trajectory_generator_max_speed
     )
+    trajectory_generator.set_path_facing(sim_params.path_facing)
 
     test_trajectory_controller(
         logger,

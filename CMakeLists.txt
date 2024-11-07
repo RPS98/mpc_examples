@@ -46,7 +46,7 @@ set(SOURCE_CPP_FILES
 )
 
 # Add executable for each example
-file(GLOB_RECURSE EXAMPLES_SOURCE "examples/*_example.cpp")
+file(GLOB_RECURSE EXAMPLES_SOURCE "mpc_examples/*_example.cpp")
 foreach(EXAMPLE_FILE ${EXAMPLES_SOURCE})
   get_filename_component(EXAMPLE_NAME ${EXAMPLE_FILE} NAME_WE)
   MESSAGE(STATUS "Adding example: ${EXAMPLE_NAME}")

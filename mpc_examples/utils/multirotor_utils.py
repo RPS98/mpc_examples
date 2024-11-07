@@ -48,21 +48,19 @@ class SimParams:
     """
     Sim parameters.
 
-    :param sim_time(float): Simulation time in seconds.
-    :param dt(float): Time step in seconds.
     :param trajectory_generator_max_speed(float): Maximum speed of the
     trajectory generator.
     :param trajectory_generator_waypoints(np.ndarray): Waypoints of the
     trajectory generator.
     :param floor_height(float): Floor height.
+    :param path_facing(bool): Path facing.
     """
 
-    sim_time: float = 10.0
-    dt: float = 0.01
     trajectory_generator_max_speed: float = 1.0
     trajectory_generator_waypoints: np.ndarray = \
         field(default_factory=lambda: np.zeros((1, 3)))
     floor_height: float = 0.0
+    path_facing: bool = False
 
 
 def read_simulator_params(config_file_path: str) \
@@ -80,13 +78,12 @@ def read_simulator_params(config_file_path: str) \
     # Simulation parameters
     sim_params = config['sim_config']
     sim_params = SimParams(
-        sim_time=sim_params['sim_time'],
-        dt=sim_params['dt'],
         trajectory_generator_max_speed=(
             sim_params['trajectory_generator_max_speed']),
         trajectory_generator_waypoints=(
             np.array(sim_params['trajectory_generator_waypoints'])),
-        floor_height=sim_params['floor_height']
+        floor_height=sim_params['floor_height'],
+        path_facing=sim_params['path_facing']
     )
 
     # Dynamics state

@@ -30,24 +30,6 @@ cd build
 make -j4
 ```
 
-## Example of the MPC using acados sim solver, both with Python and with C++
-
-You can run the MPC using the Python interface or the C++ interface, from the root folder:
-
-```bash
-python3 examples/integrator_example.py
-```
-
-```bash
-./build/mpc_examples_integrator_example
-```
-
-You can check the results in the `mpc_log.csv` file, and plot them with:
-
-```bash
-python3 examples/utils/sym_plot_results.py
-```
-
 ## Example of the MPC using multirotor simulator, both with Python and with C++
 
 You can run the MPC using the Python interface or the C++ interface, from the root folder:
