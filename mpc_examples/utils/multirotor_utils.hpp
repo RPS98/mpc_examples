@@ -114,6 +114,14 @@ std::array<double, 4> compute_path_facing(const Eigen::Vector3d velocity) {
   return {q.w(), q.x(), q.y(), q.z()};
 }
 
+std::array<double, 4> compute_path_facing(const Eigen::Vector2d velocity) {
+  double yaw = atan2(velocity.y(), velocity.x());
+  double pitch, roll = 0.0;
+
+  Eigen::Quaterniond q = euler_to_quaternion(roll, pitch, yaw);
+  return {q.w(), q.x(), q.y(), q.z()};
+}
+
 struct YamlMPCData {
   std::array<double, acados_mpc::Gains::Nq> Q;
   std::array<double, acados_mpc::Gains::Nqe> Qe;

@@ -59,7 +59,10 @@ void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& ref
                                    bool path_facing = false) {
   std::array<double, 4> q = {1.0, 0.0, 0.0, 0.0};
   if (path_facing) {
-    q = acados_mpc_examples::compute_path_facing(references.velocity);
+    Eigen::Vector2d v_xy = references.velocity.head(2);
+    if (v_xy.norm() > 1e-6) {
+      q = acados_mpc_examples::compute_path_facing(v_xy);
+    }
   }
 
   if (index == MPC_N) {
@@ -158,8 +161,9 @@ void test_mpc_controller(CsvLogger& logger,
   std::vector<double> total_times;
   total_times.reserve(n_iterations);
 
-  for (double t = 0; t < max_time; t += tf) {
-    print_progress_bar(t / max_time);
+  double hover_time = 2.0;
+  for (double t = 0; t < max_time + hover_time; t += tf) {
+    print_progress_bar(t / (max_time + hover_time));
     auto iter_start = std::chrono::high_resolution_clock::now();
 
     double t_eval = t;
