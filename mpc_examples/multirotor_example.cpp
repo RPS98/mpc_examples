@@ -256,8 +256,7 @@ int main(int argc, char** argv) {
   // Params
   acados_mpc_examples::YamlData yaml_data;
   // acados_mpc_examples::read_yaml_params("mpc_examples/simulation_config.yaml", yaml_data);
-  acados_mpc_examples::read_yaml_params(
-      "/home/rafa/mpc_examples/mpc_examples/simulation_config.yaml", yaml_data);
+  acados_mpc_examples::read_yaml_params("mpc_examples/simulation_config.yaml", yaml_data);
 
   // Initialize simulator
   multirotor::Simulator simulator = multirotor::Simulator(yaml_data.simulator_params);
