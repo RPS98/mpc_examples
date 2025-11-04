@@ -122,9 +122,9 @@ def plot_drone_3d(position, orientation, axs):
 
     # Rotation matrix based on quaternion
     R = np.array([
-        [1 - 2*qy**2 - 2*qz**2, 2*qx*qy - 2*qz*qw, 2*qx*qz + 2*qy*qw],
-        [2*qx*qy + 2*qz*qw, 1 - 2*qx**2 - 2*qz**2, 2*qy*qz - 2*qx*qw],
-        [2*qx*qz - 2*qy*qw, 2*qy*qz + 2*qx*qw, 1 - 2*qx**2 - 2*qy**2]
+        [1 - 2 * qy**2 - 2 * qz**2, 2 * qx * qy - 2 * qz * qw, 2 * qx * qz + 2 * qy * qw],
+        [2 * qx * qy + 2 * qz * qw, 1 - 2 * qx**2 - 2 * qz**2, 2 * qy * qz - 2 * qx * qw],
+        [2 * qx * qz - 2 * qy * qw, 2 * qy * qz + 2 * qx * qw, 1 - 2 * qx**2 - 2 * qy**2]
     ])
 
     # Position of rotors and the center of the body
@@ -159,6 +159,24 @@ def plot_values_3d(data, values, title, axs, plot_drone=True):
     if data[values[0] + '_ref']:
         axs.plot(data[values[0] + '_ref'], data[values[1] + '_ref'],
                  data[values[2] + '_ref'], linestyle='dashed', label='reference')
+        axs.scatter3D(
+            data[values[0] + '_ref'][0],
+            data[values[1] + '_ref'][0],
+            data[values[2] + '_ref'][0],
+            c='green',
+            marker='o',
+            label='start'
+        )
+
+        # Último punto
+        axs.scatter3D(
+            data[values[0] + '_ref'][-1],
+            data[values[1] + '_ref'][-1],
+            data[values[2] + '_ref'][-1],
+            c='red',
+            marker='o',
+            label='end'
+        )
 
     axs.set_xlabel('x [m]')
     axs.set_ylabel('y [m]')
@@ -170,10 +188,11 @@ def plot_values_3d(data, values, title, axs, plot_drone=True):
         # Plot the drone at intervals
         NUM_STEPS = len(x_values)
         MEAS_EVERY_STEPS = max(1, NUM_STEPS // 100)  # Plot drone every 50% of the steps
-        
+
         for step in range(0, NUM_STEPS, MEAS_EVERY_STEPS):
             position = np.array([x_values[step], y_values[step], z_values[step]])
-            orientation = np.array([data['qw'][step], data['qx'][step], data['qy'][step], data['qz'][step]])
+            orientation = np.array([data['qw'][step], data['qx'][step],
+                                   data['qy'][step], data['qz'][step]])
             plot_drone_3d(position, orientation, axs)
 
     # Equals aspect ratio
@@ -326,7 +345,7 @@ def main():
         plt.show()
         plt.pause(0.5)
     else:
-        update_plot_figure0(0, axs0, plot_drone=True)
+        update_plot_figure0(0, axs0, plot_drone=False)
         update_plot_figure1(0, axs1)
         update_plot_figure2(0, axs2)
         update_plot_figure3(0, axs3)

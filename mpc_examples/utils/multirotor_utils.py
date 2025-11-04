@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from mpc.mpc_controller import mpc_lib
 from pyquaternion import Quaternion
 import yaml
+from collections import defaultdict
+import csv
 
 
 @dataclass
@@ -97,8 +99,7 @@ def read_simulator_params(config_file_path: str) \
         angular_acceleration=np.array(config_state['angular_acceleration'])
     )
     actuators = ms.Actuators(
-        motor_angular_velocity=\
-            np.array(config_state['actuators_angular_speed'])
+        motor_angular_velocity=np.array(config_state['actuators_angular_speed'])
     )
 
     # Dynamics model
@@ -201,6 +202,8 @@ def read_simulator_params(config_file_path: str) \
         R=np.diag(np.array(config_controller['mpc']['R'], dtype=np.float64)),
         lbu=np.array(config_controller['mpc']['lbu'], dtype=np.float64),
         ubu=np.array(config_controller['mpc']['ubu'], dtype=np.float64),
+        lbx=np.array(config_controller['mpc']['lbx'], dtype=np.float64),
+        ubx=np.array(config_controller['mpc']['ubx'], dtype=np.float64),
         p=np.array(config_controller['mpc']['p'], dtype=np.float64)
     )
 
@@ -351,19 +354,65 @@ class CsvLogger:
         self.file.close()
 
 
+class CSVReader:
+    """Read a CSV file and return a dictionary with the data."""
+
+    def __init__(self, file_name: str) -> None:
+        """
+        Read a CSV file and return a dictionary with the data.
+        """
+        self.file_name = file_name
+        print(f'Reading from file: {self.file_name}')
+
+    def read_csv(self):
+        """Read the CSV file and return a dictionary with the data."""
+        # Create a defaultdict to store the data
+        data = defaultdict(list)
+
+        # Open the CSV file
+        with open(filename, mode='r', newline='') as file:
+            csv_reader = csv.DictReader(file)
+
+            # Iterate through each row in the CSV file
+            for row in csv_reader:
+                # Iterate through each key and value in the row
+                for key, value in row.items():
+                    # Append the value to the corresponding list in the dictionary
+                    if type(value) == str:
+                        if value == '':
+                            break
+                        data[key].append(float(value))
+
+        # Check there are 78 keys in the dictionary
+        if len(data.keys()) != 78:
+            print('Warn: number of keys is not 78, it is ', len(data.keys()))
+
+        # Check all keys in the dictionary have the same length
+        for key in data.keys():
+            if len(data[key]) != len(data['time']):
+                print('ERROR: key ', key, ' has different length')
+                return
+
+        return data
+
+
 if __name__ == '__main__':
-    filename = 'multirotor_log.csv'
-    logger = CsvLogger(filename)
+    # filename = 'multirotor_log.csv'
+    # logger = CsvLogger(filename)
 
-    CONFIG_FILE = 'examples/simulation_config.yaml'
-    simulator, sim_params = get_multirotor_simulator(CONFIG_FILE)
+    # CONFIG_FILE = 'examples/simulation_config.yaml'
+    # simulator, sim_params = get_multirotor_simulator(CONFIG_FILE)
 
-    t = 0.0  # Sim time in seconds
-    dt = 0.001  # Time step in seconds
-    for _ in range(1000):
-        logger.save(t, simulator)
-        simulator.update_controller(dt)
-        simulator.update_dynamics(dt)
-        simulator.update_imu(dt)
-        simulator.update_inertial_odometry(dt)
-        t += dt
+    # t = 0.0  # Sim time in seconds
+    # dt = 0.001  # Time step in seconds
+    # for _ in range(1000):
+    #     logger.save(t, simulator)
+    #     simulator.update_controller(dt)
+    #     simulator.update_dynamics(dt)
+    #     simulator.update_imu(dt)
+    #     simulator.update_inertial_odometry(dt)
+    #     t += dt
+    filename = 'falla.csv'
+    reader = CSVReader(filename)
+    data = reader.read_csv()
+    print(data)

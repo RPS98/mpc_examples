@@ -46,6 +46,8 @@
 
 #include "utils/multirotor_utils.hpp"
 
+#define MAX_TIME 30.0  // seconds
+
 namespace acados_mpc_examples {
 
 using DynamicTrajectory = dynamic_traj_generator::DynamicTrajectory;
@@ -53,28 +55,15 @@ using DynamicWaypoint   = dynamic_traj_generator::DynamicWaypoint;
 
 #define SIM_CONFIG_PATH "examples/ms_simulation_config.yaml"
 
-void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& references,
+void position_ref_to_mpc_ref(Eigen::Vector3d waypoint,
                                    acados_mpc::MPCData* mpc_data,
-                                   int index,
-                                   bool path_facing = false) {
+                                   int index) {
   std::array<double, 4> q = {1.0, 0.0, 0.0, 0.0};
-  if (path_facing) {
-    Eigen::Vector2d v_xy = references.velocity.head(2);
-    if (v_xy.norm() > 1e-6) {
-      q = acados_mpc_examples::compute_path_facing(v_xy);
-    }
-  }
-
   if (index == MPC_N) {
     // Position
-    mpc_data->reference_end.set_data(0, references.position.x());
-    mpc_data->reference_end.set_data(1, references.position.y());
-    mpc_data->reference_end.set_data(2, references.position.z());
-
-    // Velocity
-    mpc_data->reference_end.set_data(6, references.velocity.x());
-    mpc_data->reference_end.set_data(7, references.velocity.y());
-    mpc_data->reference_end.set_data(8, references.velocity.z());
+    mpc_data->reference_end.set_data(0, waypoint[0]);
+    mpc_data->reference_end.set_data(1, waypoint[1]);
+    mpc_data->reference_end.set_data(2, waypoint[2]);
 
     // Orientation
     mpc_data->p_params.set_data(MPC_N, 1, q[0]);
@@ -87,14 +76,9 @@ void traj_generator_ref_to_mpc_ref(const dynamic_traj_generator::References& ref
     throw std::out_of_range("Index out of range.");
   }
   // Position
-  mpc_data->reference.set_data(index, 0, references.position.x());
-  mpc_data->reference.set_data(index, 1, references.position.y());
-  mpc_data->reference.set_data(index, 2, references.position.z());
-
-  // Velocity
-  mpc_data->reference.set_data(index, 6, references.velocity.x());
-  mpc_data->reference.set_data(index, 7, references.velocity.y());
-  mpc_data->reference.set_data(index, 8, references.velocity.z());
+  mpc_data->reference.set_data(index, 0, waypoint[0]);
+  mpc_data->reference.set_data(index, 1, waypoint[1]);
+  mpc_data->reference.set_data(index, 2, waypoint[2]);
 
   // Control
   mpc_data->reference.set_data(index, 9, mpc_data->p_params.data[0] * 9.81);  // Thrust
@@ -125,7 +109,6 @@ void print_progress_bar(float progress) {
 void test_mpc_controller(CsvLogger& logger,
                          acados_mpc::MPC& mpc,
                          multirotor::Simulator<double, 4>& simulator,
-                         std::unique_ptr<DynamicTrajectory>& trajectory_generator,
                          const YamlData& yaml_data) {
   // MPC Parameters
   acados_mpc::MPCData* mpc_data = mpc.get_data();
@@ -134,26 +117,16 @@ void test_mpc_controller(CsvLogger& logger,
 
   // Set control mode
   simulator.set_control_mode(multirotor::ControlMode::ACRO);
-  simulator.set_reference_yaw_angle(0.0);
+  Eigen::Quaterniond q = {1.0, 0.0, 0.0, 0.0};
+  double yaw, roll, pitch;
+  quaternion_to_Euler(q, roll, pitch, yaw);
+  simulator.set_reference_yaw_angle(yaw);
 
-  // Simulation
-  double max_time = trajectory_generator->getMaxTime();
-  double min_time = trajectory_generator->getMinTime();
   double t        = 0.0;  // seconds
   logger.save(t, simulator);
 
-  // Initialize dynamic trajectory generator
-  dynamic_traj_generator::References references;
-  references.position = simulator.get_dynamics_const().get_state().kinematics.position;
-  references.velocity = simulator.get_dynamics_const().get_state().kinematics.linear_velocity;
-  references.acceleration =
-      simulator.get_dynamics_const().get_state().kinematics.linear_acceleration;
-  double roll_ref, pitch_ref, yaw_ref;
-  quaternion_to_Euler(simulator.get_dynamics_const().get_state().kinematics.orientation, roll_ref,
-                      pitch_ref, yaw_ref);
-
   // Time measurement
-  const std::size_t n_iterations = static_cast<std::size_t>(max_time / tf);
+  const std::size_t n_iterations = static_cast<std::size_t>(MAX_TIME / tf);
   std::vector<double> mpc_times;
   mpc_times.reserve(n_iterations);
   std::vector<double> sim_times;
@@ -161,29 +134,18 @@ void test_mpc_controller(CsvLogger& logger,
   std::vector<double> total_times;
   total_times.reserve(n_iterations);
 
+  int pos_index = 0;
   double hover_time = 2.0;
-  for (double t = 0; t < max_time + hover_time; t += tf) {
-    print_progress_bar(t / (max_time + hover_time));
+  for (double t = 0; t < MAX_TIME + hover_time; t += tf) {
+    print_progress_bar(t / (MAX_TIME + hover_time));
     auto iter_start = std::chrono::high_resolution_clock::now();
 
-    double t_eval = t;
-    dynamic_traj_generator::References init_references;
-    bool init_ref = true;
-
     // yref from 0 to N-1 (N steps) and yref_N from N to N
+    // printf("Reference x: %.2f, y: %.2f, z: %.2f\n", yaml_data.waypoints[pos_index][0], yaml_data.waypoints[pos_index][1], yaml_data.waypoints[pos_index][2]);
     for (int i = 0; i < prediction_steps + 1; i++) {
-      if (t_eval >= max_time) {
-        t_eval = max_time - tf;
-      } else if (t_eval <= min_time) {
-        t_eval = min_time;
-      }
-      trajectory_generator->evaluateTrajectory(t_eval, references);
-      traj_generator_ref_to_mpc_ref(references, mpc_data, i, yaml_data.path_facing);
-      t_eval += tf;
-      if (init_ref) {
-        init_references = references;
-        init_ref        = false;
-      }
+
+      position_ref_to_mpc_ref(yaml_data.waypoints[pos_index], mpc_data, i);
+
     }
 
     // Solve MPC
@@ -204,8 +166,11 @@ void test_mpc_controller(CsvLogger& logger,
         8, simulator.get_dynamics_const().get_state().kinematics.linear_velocity.y());
     mpc_data->state.set_data(
         9, simulator.get_dynamics_const().get_state().kinematics.linear_velocity.z());
+
     auto mpc_start = std::chrono::high_resolution_clock::now();
-    mpc.solve();
+   if( mpc.solve()!=0){
+    exit(1);
+   }
     auto mpc_end = std::chrono::high_resolution_clock::now();
 
     // Simulate
@@ -231,12 +196,18 @@ void test_mpc_controller(CsvLogger& logger,
     total_times.push_back(total_duration.count());
 
     // Update references for debugging
-    simulator.set_reference_trajectory(init_references.position, init_references.velocity,
-                                       init_references.acceleration);
-    simulator.set_reference_yaw_angle(
-        atan2(init_references.velocity.y(), init_references.velocity.x()));
+    simulator.set_reference_position(yaml_data.waypoints[pos_index]);
+    simulator.set_reference_yaw_angle(yaw);
 
     logger.save(t, simulator);
+     double error = std::sqrt(std::pow(mpc_data->state.data[0] - yaml_data.waypoints[pos_index][0], 2) +
+                             std::pow(mpc_data->state.data[1] - yaml_data.waypoints[pos_index][1], 2) +
+                             std::pow(mpc_data->state.data[2] - yaml_data.waypoints[pos_index][2], 2));
+  if (error < 0.2 && pos_index < yaml_data.waypoints.size() - 1){
+    printf("Reference x: %.2f, y: %.2f, z: %.2f\n", yaml_data.waypoints[pos_index][0], yaml_data.waypoints[pos_index][1], yaml_data.waypoints[pos_index][2]);
+    pos_index++;
+    printf("\nCurrently at state %.2f, %.2f, %.2f\n", mpc_data->state.data[0], mpc_data->state.data[1], mpc_data->state.data[2]);
+  }
   }
   logger.close();
   std::cout << "Simulation finished." << std::endl;
@@ -255,8 +226,7 @@ void test_mpc_controller(CsvLogger& logger,
 int main(int argc, char** argv) {
   // Params
   acados_mpc_examples::YamlData yaml_data;
-  // acados_mpc_examples::read_yaml_params("mpc_examples/simulation_config.yaml", yaml_data);
-  acados_mpc_examples::read_yaml_params("mpc_examples/simulation_config.yaml", yaml_data);
+  acados_mpc_examples::read_yaml_params("/home/carmen/repos/mpc_ws/src/mpc_examples/mpc_examples/simulation_config.yaml", yaml_data);
 
   // Initialize simulator
   multirotor::Simulator simulator = multirotor::Simulator(yaml_data.simulator_params);
@@ -275,7 +245,10 @@ int main(int argc, char** argv) {
   mpc.get_gains()->set_R(yaml_data.mpc_data.R);
   mpc.get_bounds()->set_lbu(yaml_data.mpc_data.lbu);
   mpc.get_bounds()->set_ubu(yaml_data.mpc_data.ubu);
+  mpc.get_state_bounds()->set_lbx(yaml_data.mpc_data.lbx);
+  mpc.get_state_bounds()->set_ubx(yaml_data.mpc_data.ubx);
   mpc.update_bounds();
+  mpc.update_state_bounds();
   mpc.update_gains();
 
   // Update online params
@@ -285,14 +258,11 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Initialize trajectory generator
-  auto trajectory_generator = acados_mpc_examples::get_trajectory_generator(
-      Eigen::Vector3d::Zero(), yaml_data.waypoints, yaml_data.trajectory_generator_max_speed);
 
   // Logger
-  std::string file_name = "ms_mpc_log.csv";
+  std::string file_name = "/home/carmen/repos/mpc_ws/src/mpc_examples/ms_mpc_log.csv";
   acados_mpc_examples::CsvLogger logger(file_name);
 
-  acados_mpc_examples::test_mpc_controller(logger, mpc, simulator, trajectory_generator, yaml_data);
+  acados_mpc_examples::test_mpc_controller(logger, mpc, simulator, yaml_data);
   return 0;
 }

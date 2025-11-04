@@ -79,14 +79,11 @@ def Euler_to_quaternion(roll: float, pitch: float, yaw: float) -> list:
     return [w, x, y, z]
 
 
-def trajectory_point_to_mpc_reference(trajectory_point):
+def position_reference_to_mpc_reference(position_reference, ref_yaw: float = 0.0):
     """Convert trajectory point to MPC reference."""
-    ref_position, ref_velocity, _, ref_yaw = \
-        trajectory_point
     return mpc_lib.CaState.get_state(
-        position=ref_position,
+        position=position_reference,
         orientation=Euler_to_quaternion(0.0, 0.0, ref_yaw),
-        linear_velocity=ref_velocity
     )
 
 
@@ -99,7 +96,8 @@ def progress_bar(func):
                     bar_format='{l_bar}{bar} | {n:.4f}/{total:.2f} '
                     '[{elapsed}<{remaining}, {rate_fmt}]')
 
-        result = func(logger, mpc, simulator, trajectory_generator, sim_params, pbar, *args, **kwargs)
+        result = func(logger, mpc, simulator, trajectory_generator,
+                      sim_params, pbar, *args, **kwargs)
 
         pbar.close()
         return result
@@ -107,7 +105,7 @@ def progress_bar(func):
 
 
 @progress_bar
-def test_trajectory_controller(
+def test_position_controller(
         logger: CsvLogger,
         mpc: MPC,
         simulator: ms.Simulator,
@@ -120,14 +118,9 @@ def test_trajectory_controller(
     prediction_horizon = mpc.prediction_horizon
     tf = prediction_horizon / prediction_steps
 
-    # Get max and min time
-    max_time = trajectory_generator.get_max_time()
-    min_time = trajectory_generator.get_min_time()
-
     # Set control mode
     simulator.set_control_mode(ms.ControlMode.ACRO)
-    ref_position, ref_velocity, ref_acceleration, ref_yaw = \
-        trajectory_generator.evaluate_trajectory(min_time)
+
     simulator.set_reference_trajectory(
         ref_position,
         ref_velocity,
@@ -147,19 +140,10 @@ def test_trajectory_controller(
     logger.save(t, simulator)
     while t < trajectory_generator.get_max_time():
         t_eval = t
-        reference_trajectory = np.zeros((prediction_steps+1, mpc.x_dim))
+        reference_trajectory = np.zeros((prediction_steps + 1, mpc.x_dim))
         first_trajectory_point = None
-        for i in range(prediction_steps+1):
-            if t_eval >= max_time:
-                t_eval = max_time - tf
-            elif t_eval <= min_time:
-                t_eval = min_time
-            trajectory_point = trajectory_generator.evaluate_trajectory(t_eval)
-            reference_trajectory[i, :] = trajectory_point_to_mpc_reference(trajectory_point)
-            t_eval += tf
-
-            if first_trajectory_point is None:
-                first_trajectory_point = trajectory_point
+        for i in range(prediction_steps + 1):
+            reference_trajectory[i, :] = position_reference_to_mpc_reference(trajectory_point)
 
         # Current state
         orientation = simulator.get_state().kinematics.orientation
@@ -210,24 +194,27 @@ if __name__ == '__main__':
     file_name = 'ms_mpc_log.csv'
     logger = CsvLogger(file_name)
 
-    # MPC
-    mpc = MPC(
-        prediction_steps=100,
-        prediction_horizon=0.5,
-        params=mpc_params
-    )
+    # # MPC
+    # mpc = MPC(
+    #     prediction_steps=100,
+    #     prediction_horizon=0.5,
+    #     params=mpc_params
+    # )
 
-    # Trajectory generator
-    trajectory_generator = get_trajectory_generator(
-        initial_position=simulator.get_state().kinematics.position,
-        waypoints=sim_params.trajectory_generator_waypoints,
-        speed=sim_params.trajectory_generator_max_speed
-    )
-    trajectory_generator.set_path_facing(sim_params.path_facing)
+    # # # Trajectory generator
+    # # trajectory_generator = get_trajectory_generator(
+    # #     initial_position=simulator.get_state().kinematics.position,
+    # #     waypoints=sim_params.trajectory_generator_waypoints,
+    # #     speed=sim_params.trajectory_generator_max_speed
+    # # )
+    # # trajectory_generator.set_path_facing(sim_params.path_facing)
 
-    test_trajectory_controller(
-        logger,
-        mpc,
-        simulator,
-        trajectory_generator,
-        sim_params)
+    # test_position_controller(
+    #     logger,
+    #     mpc,
+    #     simulator,
+    #     sim_params)
+    file_name_r = 'falla.csv'
+    reader = CsvLogger(file_name_r)
+    data = reader.read_csv()
+    print(data)

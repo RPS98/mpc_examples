@@ -126,6 +126,8 @@ struct YamlMPCData {
   std::array<double, acados_mpc::Gains::Nq> Q;
   std::array<double, acados_mpc::Gains::Nqe> Qe;
   std::array<double, acados_mpc::Gains::Nr> R;
+  std::array<double, acados_mpc::StateBounds::Nx> lbx;
+  std::array<double, acados_mpc::StateBounds::Nx> ubx;
   std::array<double, acados_mpc::Bounds::Nu> lbu;
   std::array<double, acados_mpc::Bounds::Nu> ubu;
   std::array<double, acados_mpc::OnlineParams::Np> p;
@@ -282,6 +284,8 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
   std::vector<double> R   = yaml_config_file["controller"]["mpc"]["R"].as<std::vector<double>>();
   std::vector<double> lbu = yaml_config_file["controller"]["mpc"]["lbu"].as<std::vector<double>>();
   std::vector<double> ubu = yaml_config_file["controller"]["mpc"]["ubu"].as<std::vector<double>>();
+  std::vector<double> lbx  = yaml_config_file["controller"]["mpc"]["lbx"].as<std::vector<double>>();
+  std::vector<double> ubx  = yaml_config_file["controller"]["mpc"]["ubx"].as<std::vector<double>>();
   std::vector<double> po  = yaml_config_file["controller"]["mpc"]["p"].as<std::vector<double>>();
 
   for (int i = 0; i < acados_mpc::Gains::Nq; i++) {
@@ -292,6 +296,10 @@ void read_yaml_params(const std::string& file_path, YamlData& data) {
   }
   for (int i = 0; i < acados_mpc::Gains::Nr; i++) {
     data.mpc_data.R[i] = R[i];
+  }
+    for (int i = 0; i < acados_mpc::StateBounds::Nx; i++) {
+    data.mpc_data.lbx[i] = lbx[i];
+    data.mpc_data.ubx[i] = ubx[i];
   }
   for (int i = 0; i < acados_mpc::Bounds::Nu; i++) {
     data.mpc_data.lbu[i] = lbu[i];
