@@ -7,5 +7,7 @@ doxygen/
 .cache/
 COLCON_IGNORE
 *.csv
+*.json
 __pycache__/
 mpc_generated_code/
+acados_position_mpc/

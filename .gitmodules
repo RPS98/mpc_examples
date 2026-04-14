@@ -1,7 +1,6 @@
-[submodule "thirdparty/mpc"]
-	path = thirdparty/mpc
-	url = https://github.com/RPS98/mpc.git
-	tag = position_control
-[submodule "thirdparty/multirotor_simulator"]
-	path = thirdparty/multirotor_simulator
-	url = https://github.com/RPS98/multirotor_simulator.git
+[submodule "thirdparty/mav_simulator"]
+	path = thirdparty/mav_simulator
+	url = git@github.com:RPS98/mav_simulator.git
+[submodule "thirdparty/position_mpc"]
+	path = thirdparty/position_mpc
+	url = git@github.com:RPS98/position_mpc.git
