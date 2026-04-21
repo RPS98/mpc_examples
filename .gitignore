@@ -3,6 +3,7 @@ build/
 install/
 log/
 logs/
+simulator_logs/
 doxygen/
 .cache/
 COLCON_IGNORE

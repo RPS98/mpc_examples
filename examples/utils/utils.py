@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2025 Universidad Politecnica de Madrid
+# Copyright 2025 Universidad Politécnica de Madrid
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -12,9 +12,9 @@
 #      notice, this list of conditions and the following disclaimer in the
 #      documentation and/or other materials provided with the distribution.
 #
-#    * Neither the name of the Universidad Politecnica de Madrid nor the names
-#      of its contributors may be used to endorse or promote products derived
-#      from this software without specific prior written permission.
+#    * Neither the name of the Universidad Politécnica de Madrid nor the names of its
+#      contributors may be used to endorse or promote products derived from
+#      this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -31,11 +31,22 @@
 """MPC + MAV Simulator integrated example utilities."""
 
 __authors__ = 'Rafael Perez-Segui'
-__copyright__ = 'Copyright (c) 2025 Universidad Politecnica de Madrid'
+__copyright__ = 'Copyright (c) 2025 Universidad Politécnica de Madrid'
 __license__ = 'BSD-3-Clause'
 
 import math
+import os
 import numpy as np
+
+
+SIMULATOR_LOGS_DIR = 'simulator_logs'
+
+
+def normalize_log_path(file_name: str) -> str:
+    """Resolve plain file names into simulator_logs/<name>."""
+    if os.path.dirname(file_name):
+        return file_name
+    return os.path.join(SIMULATOR_LOGS_DIR, file_name)
 
 
 def euler_to_quaternion(roll: float, pitch: float, yaw: float) -> np.ndarray:
@@ -83,22 +94,34 @@ def compute_path_facing(direction: np.ndarray) -> np.ndarray:
     return euler_to_quaternion(0.0, 0.0, yaw)
 
 
-def advance_reference_position(
-        current_ref: np.ndarray,
-        target: np.ndarray,
-        max_speed: float,
-        dt: float) -> np.ndarray:
-    """Move reference position toward target with bounded speed."""
-    delta = target - current_ref
-    distance = np.linalg.norm(delta)
-    if distance < 1e-9:
-        return target.copy()
+def get_desired_orientation(
+        waypoint: np.ndarray,
+        current_position: np.ndarray,
+        current_orientation: np.ndarray,
+        path_facing: bool) -> np.ndarray:
+    """Compute the desired orientation quaternion [w, x, y, z] for the current waypoint.
 
-    max_step = max(0.0, float(max_speed)) * float(dt)
-    if distance <= max_step:
-        return target.copy()
+    When path_facing is enabled the drone yaws to face the direction of travel.
+    Yaw is held unchanged when the drone is within 0.1 m of the waypoint to
+    avoid discontinuities near the goal.
 
-    return current_ref + delta * (max_step / distance)
+    Args:
+        waypoint: Target waypoint position (m).
+        current_position: Current drone position (m).
+        current_orientation: Current orientation quaternion [w, x, y, z].
+        path_facing: Whether to align yaw with the direction of travel.
+
+    Returns:
+        Desired orientation quaternion [w, x, y, z].
+    """
+    if not path_facing:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+
+    diff = waypoint[:2] - current_position[:2]
+    if np.linalg.norm(diff) < 0.1:
+        return current_orientation.copy()
+
+    return compute_path_facing(diff)
 
 
 class CsvLogger:
@@ -110,11 +133,15 @@ class CsvLogger:
         x_ref, y_ref, z_ref,
         qw_ref, qx_ref, qy_ref, qz_ref, roll_ref, pitch_ref, yaw_ref,
         thrust, wx_cmd, wy_cmd, wz_cmd,
-        motor_w0, motor_w1, motor_w2, motor_w3
+        motor_w0, motor_w1, motor_w2, motor_w3,
+        controller_solve_time_us, waypoint_index, hover_active, max_speed
     """
 
     def __init__(self, file_name: str) -> None:
-        self.file_name = file_name
+        self.file_name = normalize_log_path(file_name)
+        output_dir = os.path.dirname(self.file_name)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         print(f'Saving to file: {self.file_name}')
         self.file = open(self.file_name, 'w')
         self.file.write(
@@ -124,7 +151,8 @@ class CsvLogger:
             'x_ref,y_ref,z_ref,'
             'qw_ref,qx_ref,qy_ref,qz_ref,roll_ref,pitch_ref,yaw_ref,'
             'thrust,wx_cmd,wy_cmd,wz_cmd,'
-            'motor_w0,motor_w1,motor_w2,motor_w3\n')
+            'motor_w0,motor_w1,motor_w2,motor_w3,'
+            'controller_solve_time_us,waypoint_index,hover_active,max_speed\n')
 
     def _write_value(self, value: float, comma: bool = True) -> None:
         self.file.write(f'{value}')
@@ -147,7 +175,11 @@ class CsvLogger:
             reference_orientation: np.ndarray,
             thrust: float,
             command_angular_velocity: np.ndarray,
-            motor_w: np.ndarray) -> None:
+            motor_w: np.ndarray,
+            controller_solve_time_us: float,
+            waypoint_index: int,
+            hover_active: bool,
+            max_speed: float) -> None:
         """Save one simulation step."""
         euler = quaternion_to_euler(orientation)
         euler_ref = quaternion_to_euler(reference_orientation)
@@ -164,11 +196,16 @@ class CsvLogger:
         self._write_vector(reference_position)
         self._write_vector(reference_orientation)
         self._write_vector(euler_ref)
-        # MPC actuation
+        # Actuation
         self._write_value(thrust)
         self._write_vector(command_angular_velocity)
         # Motor state
-        self._write_vector(motor_w, comma=False)
+        self._write_vector(motor_w)
+        # Control metadata
+        self._write_value(controller_solve_time_us)
+        self._write_value(float(waypoint_index))
+        self._write_value(1.0 if hover_active else 0.0)
+        self._write_value(float(max_speed), comma=False)
         self.file.write('\n')
 
     def close(self) -> None:

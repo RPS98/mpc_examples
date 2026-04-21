@@ -1,0 +1,7 @@
+# Jerk-limited waypoint trajectory generator config.
+# Travel speed comes from configs/simulation/config_example.yaml (sim_config.max_speed).
+# Any value <= 0 in the entries below disables the corresponding bound inside the generator.
+max_acceleration: 5.0   # [m/s^2]
+max_jerk: 10.0          # [m/s^3]
+max_tracking_error: 0.0 # [m] feedback-based time stretch (0 -> disabled)
+reach_threshold: 0.1    # [m] waypoint acceptance radius

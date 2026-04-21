@@ -1,25 +1,52 @@
 # mpc_examples
 
-Integrated example that simulates a quadcopter following waypoints by combining two independent projects:
+Comparative quadcopter controller examples. Each example wires a controller
+against a reference generator and the shared simulator, producing CSV logs,
+plots, and performance metrics with a common format so the runs can be
+compared directly.
 
-- **[mav_simulator](https://github.com/RPS98/mav_simulator)** — C++ quadcopter physics simulator with INDI controller and IMU. Converts thrust + angular velocity commands into motor speeds and simulates rigid-body dynamics.
-- **[position_mpc](https://github.com/RPS98/mpc)** — Position MPC using [acados](https://docs.acados.org). Converts position references into thrust + angular velocity commands.
+The examples are built on a shared OOP framework (see
+[examples/framework/](examples/framework)) with adapter layers for the
+concrete controllers and reference generators. [examples/README.md](examples/README.md)
+documents the `IController` / `ITrajectoryGenerator` interfaces and gives
+the step-by-step recipe for adding a new controller or a new generator. One
+unified example main is produced per (controller, generator) combination
+(12 in total):
 
-Both a **C++ example** and a **Python example** are provided.
+| Controller \\ Generator | Waypoints | Jerk-limited | GCopter | Dynamic |
+|---|---|---|---|---|
+| Cascade PID + geometric   | `pid_waypoints` | `pid_jerk_limited` | `pid_gcopter` | `pid_dynamic` |
+| Position MPC (acados)     | `mpc_position_waypoints` | `mpc_position_jerk_limited` | `mpc_position_gcopter` | `mpc_position_dynamic` |
+| Trajectory MPC (acados)   | `mpc_trajectory_waypoints` | `mpc_trajectory_jerk_limited` | `mpc_trajectory_gcopter` | `mpc_trajectory_dynamic` |
+
+Each binary lives under `build/examples/mpc_examples_run_<combination>` and
+produces a CSV log in the shared 44-column format. Every combination also
+ships a Python twin at `examples/examples/<combination>/run_example.py` that
+consumes the same YAML configs and writes the same CSV schema through a
+pure-Python mirror of the framework
+([examples/framework/python/](examples/framework/python/)) and the adapters
+([examples/adapters/python/](examples/adapters/python/)). Adding a new
+controller or generator requires one new C++ adapter (+ its Python mirror)
+plus a ~30-line main in each language.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     Control Loop (100 Hz)                        │
+│                     Control Loop                                 │
 │                                                                  │
-│  ┌──────────────┐  thrust + ω_ref  ┌─────────────────────────┐  │
-│  │  position_mpc│ ──────────────►  │      mav_simulator      │  │
-│  │  (MPC 100Hz) │                  │                         │  │
-│  │              │ ◄── position ─── │  INDI (500Hz)           │  │
-│  │  pos_ref ──► │     velocity     │  Physics model (1000Hz) │  │
-│  └──────────────┘     attitude     │  IMU (500Hz)            │  │
-│                                    └─────────────────────────┘  │
+│  ┌──────────────┐  thrust + ω_ref  ┌─────────────────────────┐   │
+│  │  Controller  │ ──────────────►  │      mav_simulator      │   │
+│  │  (MPC / PID) │                  │                         │   │
+│  │              │ ◄── position ─── │  INDI (500Hz)           │   │
+│  │   ref ──►    │     velocity     │  Physics model (1000Hz) │   │
+│  └──────────────┘     attitude     │  IMU (500Hz)            │   │
+│         ▲                          └─────────────────────────┘   │
+│         │                                                        │
+│  ┌──────┴───────┐                                                │
+│  │  Reference   │  waypoints / dynamic trajectory                │
+│  │  generator   │                                                │
+│  └──────────────┘                                                │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -27,13 +54,32 @@ Three nested rates:
 
 | Loop | Frequency | Timestep | Responsibility |
 |------|-----------|----------|----------------|
-| MPC | 100 Hz | 0.01 s | Solve OCP → thrust + angular velocity |
+| Outer controller (MPC / PID) | 100 Hz | 0.01 s | thrust + angular velocity |
 | INDI + IMU | 500 Hz | 0.002 s | Rates → motor commands + sensor update |
 | Physics model | 1000 Hz | 0.001 s | Rigid-body dynamics integration |
 
-The MPC command (thrust + angular velocity) is held constant (zero-order hold) across the 5 INDI steps between each MPC call. This is the standard deployment pattern for real hardware.
+The outer command is held constant (zero-order hold) across the 5 INDI steps
+between two outer-controller calls. This is the standard deployment pattern
+for real hardware.
 
 ## Dependencies
+
+### System packages (Ubuntu 22.04, ROS 2 Humble host)
+
+```bash
+sudo apt install build-essential cmake libeigen3-dev libyaml-cpp-dev \
+                 libgtest-dev pybind11-dev python3-pybind11 \
+                 python3-numpy python3-matplotlib python3-yaml \
+                 python3-pytest
+```
+
+### Python packages (user-space)
+
+```bash
+pip3 install --user casadi acados-template jinja2 tqdm
+```
+
+`numpy`, `matplotlib`, `pyyaml`, and `pytest` come from the apt step above.
 
 ### acados
 
@@ -48,7 +94,7 @@ cmake -DACADOS_WITH_QPOASES=ON ..
 make install -j4
 ```
 
-Export the required paths:
+Export the required paths (put in `~/.bashrc`):
 
 ```bash
 export ACADOS_SOURCE_DIR="<path_to_acados>"     # e.g. ~/acados
@@ -64,30 +110,9 @@ Install the tera renderer (code generation backend):
 chmod +x $ACADOS_SOURCE_DIR/bin/t_renderer
 ```
 
-### mav_simulator (Python bindings)
-
-```bash
-cd thirdparty/mav_simulator
-pip3 install pybind/
-```
-
-### position_mpc (Python package)
-
-```bash
-cd thirdparty/position_mpc
-pip3 install .
-```
-
-### C++ build dependencies
-
-- CMake ≥ 3.5
-- C++17 compiler
-- Eigen3
-- yaml-cpp (`sudo apt install libyaml-cpp-dev`)
-
 ## Installation
 
-#### 1. Clone the repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/RPS98/mpc_examples.git
@@ -95,136 +120,215 @@ cd mpc_examples
 git submodule update --recursive --init
 ```
 
-#### 2. Install dependencies
+### 2. Generate the acados C code (once)
 
-Follow the [acados](#acados) section above, then run the build script:
+```bash
+bash generate.sh
+```
+
+Produces `examples/acados_position_mpc/` and `examples/acados_trajectory_mpc/`.
+Rerun only after editing `configs/solver_definitions/solver_definition_mpc_*.yaml`.
+
+### 3. Build everything
 
 ```bash
 bash build.sh
 ```
 
-This will:
-- Install `mav_simulator` Python bindings (`mavpy`)
-- Install `position_mpc` Python package (`mpc_position`)
-- Generate the acados C code (`examples/acados_position_mpc/`)
-- Build the C++ example (`build/examples/mpc_examples_run_example`)
+One `cmake` invocation builds:
+
+- every C++ library, example binary, and test target;
+- every pybind11 Python module of the thirdparty submodules
+  (`mav_simulator`, `dynamic_trajectory_generator`, `trajectory_generator_jerk_limited`,
+  `gcopter_lib`);
+- a mirror of every Python package (compiled `.so` and pure-Python sources) under
+  [build/python/](build/python/) so a single `PYTHONPATH` entry exposes everything.
+
+**No `pip install` step is required** for the thirdparty bindings. The launch
+scripts in `scripts/` prepend `build/python/` to `PYTHONPATH` automatically.
+
+### 4. Run all tests (optional)
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+Covers C++ tests from the top-level targets and from every submodule
+(`mav_simulator` + its libs, `trajectory_generator_jerk_limited`, `gcopter_lib`,
+`dynamic_trajectory_generator`). Python test suites are registered through
+CTest too — see [`python/tests/`](python/tests/) for the mpc-level suites.
 
 ## Running the examples
 
-All commands are run from the repository root.
+Each combination produces one executable
+`build/examples/mpc_examples_run_<controller>_<generator>` (12 in total).
 
-### C++ example
-
-```bash
-./run_example_cpp.sh
-```
-
-### Python example
+### Run all 12 at once
 
 ```bash
-./run_example_py.sh
+./scripts/run_all.sh                  # C++ binaries (default)
+./scripts/run_all.sh --lang=py        # Python twins (drops *_py_log.csv)
+./scripts/run_all.sh --lang=both      # Both, side by side
 ```
 
-Both scripts run the simulation, write `mpc_log.csv`, and launch the plotter automatically.
+The helper runs every combination with the default configs baked into its
+CLI. C++ runs produce `simulator_logs/<controller>_<generator>_log.csv`;
+Python runs produce `simulator_logs/<controller>_<generator>_py_log.csv`. The
+`py` backend requires that `./build.sh` has run at least once so the
+pure-Python framework and adapters are symlinked under `build/python/`.
 
-To run with custom config files:
+### Compare aggregate metrics across combinations
 
 ```bash
-./build/examples/mpc_examples_run_example \
-  -c config_example.yaml \
-  -s config_simulator.yaml \
-  -m config_mpc.yaml \
-  -f mpc_log.csv
-
-python3 examples/run_example.py \
-  -c config_example.yaml \
-  -s config_simulator.yaml \
-  -m config_mpc.yaml \
-  -f mpc_log.csv
+python3 scripts/compare_all.py
+python3 scripts/compare_all.py --filter mpc_position
+python3 scripts/compare_all.py --out summary.csv
 ```
 
-### Plotting results
+`compare_all.py` invokes `examples/utils/compute_metrics.py` on every CSV
+produced by `run_all.sh` and prints a side-by-side table of the aggregate
+metrics (RMSE, jerk energy, settling time, etc.).
+
+### Generate plots for one or many runs
 
 ```bash
-python3 examples/utils/plot_results.py -f mpc_log.csv
+python3 scripts/plot_all.py                           # every *_log.csv in simulator_logs/
+python3 scripts/plot_all.py --filter pid mpc_position # only subset
+python3 scripts/plot_all.py --pairs \
+  "mpc_trajectory_gcopter,pid_gcopter;mpc_position_waypoints,mpc_position_waypoints_py"
 ```
 
-This generates three figures:
-- 3D trajectory with drone visualizations at regular intervals
-- Position, orientation, and velocity tracking vs reference
-- Control inputs (thrust, angular velocity), speed magnitude, and motor angular velocities
+`plot_all.py` wraps `examples/utils/plot_results.py` in batch mode, writing
+PNGs to `simulator_logs/plots/<combination>/` per run plus
+`simulator_logs/plots/_pair_<a>__vs__<b>/` for each explicit comparison pair.
+Use `plot_results.py` directly on an individual CSV when iterating.
+
+### Running a single combination manually
+
+```bash
+export PYTHONPATH="$(pwd)/build/python:${PYTHONPATH}"
+
+# C++ binary
+./build/examples/mpc_examples_run_mpc_trajectory_gcopter \
+  -c configs/simulation/config_example.yaml \
+  -s configs/simulation/config_simulator.yaml \
+  -k configs/controllers/config_mpc_trajectory.yaml \
+  -t configs/generators/config_gcopter.yaml \
+  -f simulator_logs/mpc_trajectory_gcopter_log.csv
+
+# Python twin (same CLI, same YAMLs)
+python3 examples/examples/mpc_trajectory_gcopter/run_example.py \
+  -c configs/simulation/config_example.yaml \
+  -s configs/simulation/config_simulator.yaml \
+  -k configs/controllers/config_mpc_trajectory.yaml \
+  -t configs/generators/config_gcopter.yaml \
+  -f simulator_logs/mpc_trajectory_gcopter_py_log.csv
+```
+
+All 12 binaries (and their Python twins) share the same CLI: `-c/-s` for
+simulator-side YAMLs, `-k` for the controller config, `-t` for the trajectory
+generator config, and `-f` for the output CSV. The lone exception is
+`pid_waypoints`, which shares a single YAML between controller and
+generator and uses `-p` in place of `-k`/`-t`.
 
 ## Configuration
 
-Three YAML files control the example (all at the repository root):
+All YAML files live under [configs/](configs/).
 
-### `config_example.yaml`
+### Shared by every example
 
-Top-level simulation parameters:
+- **[configs/simulation/config_example.yaml](configs/simulation/config_example.yaml)** — top-level
+  sim parameters: total time, hover time, timesteps (`model_dt`,
+  `controller_dt`, `mpc_dt`, `pid_dt`), reference speed, `path_facing`, and the
+  waypoint list.
+  *Timestep constraint*: `model_dt` must divide `controller_dt`, and
+  `controller_dt` must divide both `mpc_dt` and `pid_dt` exactly.
+- **[configs/simulation/config_simulator.yaml](configs/simulation/config_simulator.yaml)** — physical
+  model (mass, inertia, motor geometry), IMU noise model, and INDI controller
+  gains (cascade inner loop of `mav_simulator`).
 
-```yaml
-sim_config:
-  sim_time: 30.0        # Total trajectory time (s)
-  hover_time: 2.0       # Extra hover time after the last waypoint (s)
-  model_dt: 0.001       # Physics timestep — 1000 Hz
-  controller_dt: 0.002  # INDI + IMU timestep — 500 Hz
-  mpc_dt: 0.01          # MPC timestep — 100 Hz
-  max_speed: 1.0        # Max reference advance speed (m/s)
-  path_facing: true     # Align yaw toward the next waypoint
-  waypoints:
-    - [0.0, 0.0, 1.0]
-    - [2.0, 0.0, 1.0]
-    - [2.0, 2.0, 1.5]
-    - [0.0, 2.0, 1.5]
-    - [0.0, 0.0, 1.0]
-```
+### Controller-specific
 
-**Timestep constraint**: `model_dt` must divide `controller_dt`, and `controller_dt` must divide `mpc_dt` exactly.
+Controller configs (passed via `-k`):
 
-### `config_simulator.yaml`
+| File | Consumed by | Purpose |
+|---|---|---|
+| [configs/controllers/config_pid.yaml](configs/controllers/config_pid.yaml) | `pid_*` binaries | Cascade PID gains + geometric controller gains + `v_max` / `d_max` |
+| [configs/controllers/config_mpc.yaml](configs/controllers/config_mpc.yaml) | `mpc_position_*` binaries | Q, R, state + input bounds for position MPC |
+| [configs/controllers/config_mpc_trajectory.yaml](configs/controllers/config_mpc_trajectory.yaml) | `mpc_trajectory_*` binaries | Q, Qe, R for trajectory MPC |
 
-Physical model parameters (mass, inertia, motor geometry), IMU noise model, and INDI controller gains. Corresponds to the vehicle used by `mav_simulator`.
+Generator configs (passed via `-t`):
 
-### `config_mpc.yaml`
+| File | Consumed by | Purpose |
+|---|---|---|
+| [configs/generators/config_waypoints.yaml](configs/generators/config_waypoints.yaml) | `*_waypoints` | `d_max`, `reach_threshold` |
+| [configs/generators/config_jerk_limited.yaml](configs/generators/config_jerk_limited.yaml) | `*_jerk_limited` | Accel/jerk bounds + reach threshold (speed comes from `sim_config.max_speed`) |
+| [configs/generators/config_gcopter.yaml](configs/generators/config_gcopter.yaml) | `*_gcopter` | Drone params/limits + GCOPTER optimiser tuning (`max_velocity` comes from `sim_config.max_speed`) |
+| [configs/generators/config_dynamic.yaml](configs/generators/config_dynamic.yaml) | `*_dynamic` | Placeholder; travel speed comes from `sim_config.max_speed` |
 
-MPC cost weights (Q, R), control and state constraint bounds, and paths to the generated solver files. The MPC state is `[x, y, z, qw, qx, qy, qz, vx, vy, vz]` (NX=10) and the control is `[thrust, ωx, ωy, ωz]` (NU=4).
+### Acados solver generation
 
-### `solver_definition_mpc_position.yaml`
+| File | Used by |
+|---|---|
+| [configs/solver_definitions/solver_definition_mpc_position.yaml](configs/solver_definitions/solver_definition_mpc_position.yaml) | `generate.sh` → `examples/acados_position_mpc/` |
+| [configs/solver_definitions/solver_definition_mpc_trajectory.yaml](configs/solver_definitions/solver_definition_mpc_trajectory.yaml) | `generate.sh` → `examples/acados_trajectory_mpc/` |
 
-Acados solver settings: prediction horizon (N=30, tf=2.0 s), integrator type, QP solver, and export directory. Used only by `generate.sh`.
+The MPC state is `[x, y, z, qw, qx, qy, qz, vx, vy, vz]` (NX=10) and the control
+is `[thrust, ωx, ωy, ωz]` (NU=4).
 
-## Repository structure
+## Repository layout
 
 ```
 mpc_examples/
-├── CMakeLists.txt
-├── build.sh                               # Install deps, generate code, build C++
-├── generate.sh                            # Generate acados C code only
-├── run_example_cpp.sh                     # Run C++ example + plot
-├── run_example_py.sh                      # Run Python example + plot
-├── config_example.yaml                    # Sim time, dt, waypoints
-├── config_simulator.yaml                  # mav_simulator parameters
-├── config_mpc.yaml                        # MPC gains and constraints
-├── solver_definition_mpc_position.yaml    # Acados solver definition
-└── examples/
-    ├── run_example.cpp                    # C++ integrated example
-    ├── run_example.py                     # Python integrated example
-    ├── CMakeLists.txt
-    ├── acados_position_mpc/               # Generated by generate.sh
-    └── utils/
-        ├── utils.hpp         # C++: CsvLogger, geometry helpers
-        ├── yaml_utils.hpp    # C++: config loading
-        ├── utils.py          # Python: CsvLogger, geometry helpers
-        ├── config_utils.py   # Python: config loading
-        └── plot_results.py   # Visualization script
-└── thirdparty/
-    ├── mav_simulator/        # Submodule: quadcopter simulator
-    └── position_mpc/         # Local copy: position MPC
+├── CMakeLists.txt                                 # Top-level build (sets PYBIND_PY_MIRROR_ROOT)
+├── build.sh                                       # Configure + build everything
+├── generate.sh                                    # Regenerate the acados C code
+├── scripts/                                       # run_all.sh + compare_all.py + plot_all.py
+├── configs/                                       # Shared + per-adapter YAMLs
+├── examples/
+│   ├── acados_position_mpc/                       # generated by generate.sh
+│   ├── acados_trajectory_mpc/                     # generated by generate.sh
+│   ├── framework/                                 # IController, ITrajectoryGenerator, WaypointsSimulator
+│   ├── adapters/                                  # Bridges to each third-party library
+│   │   ├── controllers/{pid_geometric,mpc_position,mpc_trajectory}/
+│   │   └── trajectory_generators/{waypoint_reference,jerk_limited,gcopter,dynamic}/
+│   ├── examples/                                  # One main per (controller, generator) x 12
+│   └── utils/
+│       ├── utils.hpp                              # C++: CsvLogger, geometry helpers
+│       ├── example_config_utils.hpp               # C++: shared sim_config loader
+│       ├── utils.py                               # Python: CsvLogger, geometry helpers
+│       ├── config_utils.py                        # Python: config loading
+│       ├── plot_results.py                        # Visualisation
+│       └── compute_metrics.py                     # Per-segment performance metrics
+├── thirdparty/
+│   ├── mav_simulator/                             # C++ simulator + mavpy (Python)
+│   ├── dynamic_trajectory_generator/              # Polynomial dynamic trajectory
+│   ├── trajectory_generator_jerk_limited/         # Jerk-limited S-curve generator
+│   ├── gcopter_lib/                               # GCOPTER-based trajectory optimiser
+│   └── mpc/                                       # MPC acados core + position/trajectory controllers
+└── simulator_logs/                                # CSV logs + plots from the scripts
 ```
+
+After `build.sh` runs, the centralized Python mirror is populated at:
+
+```
+build/python/
+├── mavpy/                                # model, sensors.imu, controllers, simulator
+├── dynamic_trajectory_generator_py/
+├── trajectory_generator_jerk_limited/
+├── gcopterpy/                            # gcopterpy.trajectory
+├── mpc_acados_core/                      # symlink → thirdparty/mpc/mpc_acados_core
+├── mpc_acados_position/                  # symlink → thirdparty/mpc/controllers/position/…
+├── mpc_acados_trajectory/                # symlink → thirdparty/mpc/controllers/trajectory/…
+├── mpc_examples_framework/               # symlink → examples/framework/python/mpc_examples_framework
+└── mpc_examples_adapters/                # symlink → examples/adapters/python/mpc_examples_adapters
+```
+
+A single `export PYTHONPATH=$(pwd)/build/python:$PYTHONPATH` exposes all of them.
 
 ## CSV log format
 
-The logger writes one row per controller step (500 Hz):
+Every example logger writes one row per INDI step (500 Hz):
 
 | Column | Description |
 |--------|-------------|
@@ -237,9 +341,13 @@ The logger writes one row per controller step (500 Hz):
 | `x_ref, y_ref, z_ref` | Position reference (m) |
 | `qw_ref, qx_ref, qy_ref, qz_ref` | Orientation reference quaternion |
 | `roll_ref, pitch_ref, yaw_ref` | Reference Euler angles (rad) |
-| `thrust` | MPC thrust command (N) |
-| `wx_cmd, wy_cmd, wz_cmd` | MPC angular velocity command (rad/s, body frame) |
+| `thrust` | Outer-controller thrust command (N) |
+| `wx_cmd, wy_cmd, wz_cmd` | Outer-controller angular velocity command (rad/s, body) |
 | `motor_w0…motor_w3` | Motor angular velocities (rad/s) |
+
+`examples/utils/compute_metrics.py` produces two companion files next to each
+log (`*_metrics.csv`, `*_segments.csv`) with the aggregate and per-waypoint
+performance indicators printed by the launch scripts.
 
 ## License
 

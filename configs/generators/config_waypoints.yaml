@@ -1,0 +1,3 @@
+# Waypoint reference generator config (simple clamping generator).
+d_max: 2.0              # [m] max reference distance from current position
+reach_threshold: 0.1    # [m] waypoint acceptance radius

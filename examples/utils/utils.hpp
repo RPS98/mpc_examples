@@ -1,4 +1,4 @@
-// Copyright 2025 Universidad Politecnica de Madrid
+// Copyright 2025 Universidad Politécnica de Madrid
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,9 +10,9 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the Universidad Politecnica de Madrid nor the names
-//      of its contributors may be used to endorse or promote products derived
-//      from this software without specific prior written permission.
+//    * Neither the name of the Universidad Politécnica de Madrid nor the names of its
+//      contributors may be used to endorse or promote products derived from
+//      this software without specific prior written permission.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numeric>
@@ -49,6 +50,16 @@
 #include <vector>
 
 namespace mpc_examples {
+
+inline constexpr const char* kSimulatorLogsDir = "simulator_logs";
+
+inline std::filesystem::path normalizeLogPath(const std::string& file_name) {
+  std::filesystem::path file_path(file_name);
+  if (!file_path.has_parent_path()) {
+    file_path = std::filesystem::path(kSimulatorLogsDir) / file_path;
+  }
+  return file_path;
+}
 
 inline Eigen::Vector3d quaternionToEuler(const Eigen::Quaterniond& q) {
   const double sinr_cosp = 2.0 * (q.w() * q.x() + q.y() * q.z());
@@ -83,22 +94,6 @@ inline Eigen::Quaterniond computePathFacing(const Eigen::Vector3d& direction) {
   return eulerToQuaternion(0.0, 0.0, yaw);
 }
 
-inline Eigen::Vector3d advanceReferencePosition(const Eigen::Vector3d& current_ref,
-                                                const Eigen::Vector3d& target,
-                                                const double max_speed,
-                                                const double dt) {
-  const Eigen::Vector3d delta = target - current_ref;
-  const double distance       = delta.norm();
-  if (distance < 1e-9) {
-    return target;
-  }
-  const double max_step = std::max(0.0, max_speed) * dt;
-  if (distance <= max_step) {
-    return target;
-  }
-  return current_ref + delta * (max_step / distance);
-}
-
 /**
  * @brief CSV logger for the MPC + MAV Simulator integrated example.
  *
@@ -108,15 +103,28 @@ inline Eigen::Vector3d advanceReferencePosition(const Eigen::Vector3d& current_r
  *   x_ref, y_ref, z_ref,
  *   qw_ref, qx_ref, qy_ref, qz_ref, roll_ref, pitch_ref, yaw_ref,
  *   thrust, wx_cmd, wy_cmd, wz_cmd,
- *   motor_w0, motor_w1, motor_w2, motor_w3
+ *   motor_w0, motor_w1, motor_w2, motor_w3,
+ *   controller_solve_time_us, waypoint_index, hover_active, max_speed
  */
 class CsvLogger {
 public:
-  explicit CsvLogger(const std::string& file_name) : file_name_(file_name) {
-    std::cout << "Saving to file: " << file_name << std::endl;
-    file_ = std::ofstream(file_name, std::ofstream::out | std::ofstream::trunc);
+  explicit CsvLogger(const std::string& file_name) {
+    const std::filesystem::path file_path = normalizeLogPath(file_name);
+    file_name_                            = file_path.string();
+
+    if (file_path.has_parent_path()) {
+      std::error_code error;
+      std::filesystem::create_directories(file_path.parent_path(), error);
+      if (error) {
+        throw std::runtime_error("Could not create log directory '" +
+                                 file_path.parent_path().string() + "': " + error.message());
+      }
+    }
+
+    std::cout << "Saving to file: " << file_name_ << std::endl;
+    file_ = std::ofstream(file_name_, std::ofstream::out | std::ofstream::trunc);
     if (!file_.is_open()) {
-      throw std::runtime_error("Could not open file: " + file_name);
+      throw std::runtime_error("Could not open file: " + file_name_);
     }
     file_ << "time,"
              "x,y,z,qw,qx,qy,qz,roll,pitch,yaw,"
@@ -124,7 +132,8 @@ public:
              "x_ref,y_ref,z_ref,"
              "qw_ref,qx_ref,qy_ref,qz_ref,roll_ref,pitch_ref,yaw_ref,"
              "thrust,wx_cmd,wy_cmd,wz_cmd,"
-             "motor_w0,motor_w1,motor_w2,motor_w3"
+             "motor_w0,motor_w1,motor_w2,motor_w3,"
+             "controller_solve_time_us,waypoint_index,hover_active,max_speed"
           << std::endl;
   }
 
@@ -139,7 +148,11 @@ public:
             const Eigen::Quaterniond& reference_orientation,
             const double thrust,
             const Eigen::Vector3d& command_angular_velocity,
-            const Eigen::Matrix<double, 4, 1>& motor_w) {
+            const Eigen::Matrix<double, 4, 1>& motor_w,
+            const double controller_solve_time_us,
+            const int waypoint_index,
+            const bool hover_active,
+            const double max_speed) {
     const Eigen::Vector3d euler     = quaternionToEuler(orientation);
     const Eigen::Vector3d euler_ref = quaternionToEuler(reference_orientation);
 
@@ -161,11 +174,16 @@ public:
     write(reference_orientation.y());
     write(reference_orientation.z());
     writeVector(euler_ref);
-    // MPC actuation
+    // Actuation
     write(thrust);
     writeVector(command_angular_velocity);
     // Motor state
-    writeVector(motor_w, false);
+    writeVector(motor_w);
+    // Control metadata
+    write(controller_solve_time_us);
+    write(static_cast<double>(waypoint_index));
+    write(hover_active ? 1.0 : 0.0);
+    write(max_speed, false);
     file_ << "\n";
   }
 
@@ -211,6 +229,33 @@ inline double computeMean(const std::vector<double>& values) {
     return 0.0;
   }
   return std::accumulate(values.begin(), values.end(), 0.0) / static_cast<double>(values.size());
+}
+
+/**
+ * @brief Compute desired orientation for the current waypoint.
+ *
+ * When path_facing is enabled the drone yaws to face the direction of travel.
+ * Yaw is held unchanged when the drone is within 0.1 m of the waypoint to
+ * avoid discontinuities near the goal.
+ *
+ * @param waypoint            Target waypoint position (world frame, m).
+ * @param current_position    Current drone position (world frame, m).
+ * @param current_orientation Current drone orientation.
+ * @param path_facing         Whether to align yaw with the direction of travel.
+ * @return Desired orientation quaternion [w, x, y, z].
+ */
+inline Eigen::Quaterniond getDesiredOrientation(const Eigen::Vector3d& waypoint,
+                                                const Eigen::Vector3d& current_position,
+                                                const Eigen::Quaterniond& current_orientation,
+                                                const bool path_facing) {
+  if (!path_facing) {
+    return Eigen::Quaterniond::Identity();
+  }
+  const Eigen::Vector3d diff = waypoint - current_position;
+  if (diff.head<2>().norm() < 0.1) {
+    return current_orientation;
+  }
+  return computePathFacing(diff);
 }
 
 }  // namespace mpc_examples

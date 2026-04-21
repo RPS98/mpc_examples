@@ -1,32 +1,17 @@
 #!/bin/bash
+# Copyright 2025 Universidad Politécnica de Madrid
+# Author: Rafael Perez-Segui <r.psegui@upm.es>
+# SPDX-License-Identifier: BSD-3-Clause
+
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# ── Python dependencies ────────────────────────────────────────────────────────
-
-# Install mav_simulator Python bindings (mavpy) if not already available
-if ! python3 -c "import mavpy" &>/dev/null; then
-  echo "Installing mav_simulator Python bindings..."
-  pip3 install thirdparty/mav_simulator/pybind/
-else
-  echo "mavpy already installed — skipping."
-fi
-echo ""  
-
-# Install position_mpc Python package if not already available
-if ! python3 -c "import mpc_position" &>/dev/null; then
-  echo "Installing position_mpc Python package..."
-  pip3 install thirdparty/position_mpc/
-else
-  echo "mpc_position already installed — skipping."
-fi
-echo ""  
-
 # ── acados code generation ─────────────────────────────────────────────────────
-
-# If generated code is missing, regenerate it.
+#
+# acados-generated C code lives under examples/acados_*_mpc/ and is regenerated
+# only on demand (the process requires acados-template and is relatively slow).
 ACADOS_GENERATED_DIR="examples/acados_position_mpc"
 if [ ! -d "${ACADOS_GENERATED_DIR}" ]; then
   echo "Generating acados C code..."
@@ -34,17 +19,29 @@ if [ ! -d "${ACADOS_GENERATED_DIR}" ]; then
 else
   echo "acados C code already generated — skipping."
 fi
-echo ""  
-
-# ── C++ build ─────────────────────────────────────────────────────────────────
-
 echo ""
-echo "Building C++ example..."
+
+# ── C++ + Python build ─────────────────────────────────────────────────────────
+#
+# One CMake invocation builds every C++ target and every pybind11 module of the
+# thirdparty submodules, gathering the resulting Python packages under
+# build/python/ so a single PYTHONPATH entry exposes all of them. The launch
+# scripts under scripts/ prepend build/python/ automatically — no pip install
+# step is required.
+echo "Building C++ targets and Python bindings..."
 mkdir -p build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON -DBUILD_DEVELOPER_TESTS=ON
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON \
+  -DBUILD_EXAMPLES=ON \
+  -DBUILD_PYBIND=ON \
+  -DBUILD_DEVELOPER_TESTS=ON
 cmake --build build -j"$(nproc)"
 
 echo ""
 echo "Build complete."
-echo "Run the C++ example : ./run_example_cpp.sh"
-echo "Run the Python example: ./run_example_py.sh"
+echo "Python packages are available under: build/python/"
+echo "(scripts/run_*.sh automatically prepends this path to PYTHONPATH)"
+echo ""
+echo "Run all 12 unified examples: ./scripts/run_all.sh"
+echo "Compare aggregate metrics  : python3 scripts/compare_all.py"

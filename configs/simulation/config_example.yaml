@@ -1,0 +1,17 @@
+sim_config:
+  sim_time: 36.0        # Total simulation time (s)
+  model_dt: 0.001       # Physics model timestep - 1000Hz
+  controller_dt: 0.002  # INDI + IMU update timestep - 500Hz
+  mpc_dt: 0.01          # MPC control timestep - 100Hz
+  pid_dt: 0.01          # PID control timestep - 100Hz
+  max_speed: 3.0        # m/s reference advance speed
+  hover_time: 5.0       # seconds to hover after trajectory
+  path_facing: true
+  benchmark: false      # When true: disables CSV logging for performance measurement
+  silent: true          # When true: suppresses in-loop console output (progress bar, waypoint messages)
+  waypoints:
+    - [00.0, 00.0, 10.0]
+    - [10.0, 00.0, 10.0]
+    - [10.0, 10.0, 20.0]
+    - [00.0, 10.0, 20.0]
+    - [00.0, 00.0, 10.0]

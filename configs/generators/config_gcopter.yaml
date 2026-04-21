@@ -1,0 +1,31 @@
+# GCOPTER polytope-SFC trajectory generator config.
+trajectory_generator:
+  corridor_margin: 2.0           # [m] AABB half-margin per face for the safe flight corridor
+  waypoint_margin: 0.2           # [m] pinch half-margin at intermediate waypoints (<= 0 disables)
+  waypoint_anchor_radius: 0.5    # [m] anchor point offset along the path (<= 0 disables)
+
+drone_params:
+  mass: 1.140                 # [kg]
+  gravity: 9.8                # [m/s^2]
+  horizontal_drag: 0.70       # [-] c_h
+  vertical_drag: 0.80         # [-] c_v
+  parasitic_drag: 0.01        # [-] c_p
+  speed_smooth_factor: 1.0e-4 # [-] epsilon_v
+
+drone_limits:
+  # max_velocity is taken from configs/simulation/config_example.yaml (sim_config.max_speed).
+  max_body_rate: 2.1          # [rad/s]
+  max_tilt_angle: 1.05        # [rad]
+  min_thrust: 2.0             # [N]
+  max_thrust: 25.0            # [N]
+
+optimization:
+  time_weight: 20.0            # rho
+  position_weight: 1.0e+4
+  velocity_weight: 1.0e+4
+  body_rate_weight: 1.0e+4
+  tilt_weight: 1.0e+4
+  thrust_weight: 1.0e+5
+  smoothing_eps: 1.0e-2
+  integral_resolution: 16
+  rel_cost_tol: 1.0e-5

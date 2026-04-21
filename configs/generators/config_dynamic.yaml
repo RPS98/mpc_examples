@@ -1,0 +1,4 @@
+# Dynamic trajectory generator config.
+# The travel speed is taken from configs/simulation/config_example.yaml (sim_config.max_speed).
+# This adapter exposes no additional tunables; the file is kept as a placeholder so every
+# example has a uniform controller+generator YAML pair on the CLI.
