@@ -35,12 +35,26 @@ for entry in (doc.get("trajectories") or []):
             os.remove(csv_file)
 PY
 
+# Write a config variant whose output_csv paths point to logs/.
+CPP_CONFIG="logs/config_example.yaml"
+python3 - "${EXAMPLE_CONFIG}" "${CPP_CONFIG}" <<'PY'
+import os, sys, yaml
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    doc = yaml.safe_load(f) or {}
+for entry in (doc.get("trajectories") or []):
+    name = entry.get("output_csv") or ""
+    entry["output_csv"] = os.path.join("logs", os.path.basename(name))
+with open(dst, "w") as f:
+    yaml.safe_dump(doc, f, sort_keys=False)
+PY
+
 "${BINARY}" "${EXAMPLE_CONFIG}" "${TRAJECTORY_CONFIG}"
 
 echo
 echo "Generating plots..."
 python3 plot_results.py \
-  -c "${EXAMPLE_CONFIG}" \
+  -c "${CPP_CONFIG}" \
   --plot-all \
   --vmax 3.0 \
   --save logs/plot \

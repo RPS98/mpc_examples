@@ -23,7 +23,7 @@ fi
 
 mkdir -p logs
 
-# Write a config variant whose output_csv paths live under logs/ with simple filenames.
+# Write a config variant whose output_csv paths point to logs/.
 PY_CONFIG="logs/config_example.yaml"
 python3 - "${EXAMPLE_CONFIG}" "${PY_CONFIG}" <<'PY'
 import os, sys, yaml
@@ -32,7 +32,7 @@ with open(src) as f:
     doc = yaml.safe_load(f) or {}
 for entry in (doc.get("trajectories") or []):
     name = entry.get("output_csv") or ""
-    entry["output_csv"] = os.path.basename(name)
+    entry["output_csv"] = os.path.join("logs", os.path.basename(name))
 with open(dst, "w") as f:
     yaml.safe_dump(doc, f, sort_keys=False)
 PY
