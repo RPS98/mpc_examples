@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package mav_flight_mcap;
+
+// Minimal schema for a quadrotor flight log written to MCAP.
+// SI units: m, m/s, rad, rad/s, s, N.
+// Quaternions are (w, x, y, z), body-to-world.
+// Angular velocities are in the body frame; linear velocities in the world frame.
+
+message Vec3 {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message Quaternion {
+  double w = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+// Drone state at a given instant.
+message State {
+  double time = 1;                 // flight time [s]
+  Vec3 position = 2;               // world frame [m]
+  Quaternion orientation = 3;      // body -> world
+  Vec3 linear_velocity = 4;        // world frame [m/s]
+  Vec3 angular_velocity = 5;       // body frame [rad/s]
+}
+
+// Controller reference at the same instant.
+message Reference {
+  double time = 1;
+  Vec3 position = 2;
+  Vec3 linear_velocity = 3;
+  Quaternion orientation = 4;
+  Vec3 angular_velocity = 5;
+}
+
+// Low-level actuation command.
+message Actuation {
+  double time = 1;
+  double thrust = 2;                          // [N]
+  Vec3 command_angular_velocity = 3;          // body rates setpoint [rad/s]
+  repeated double motor_angular_velocity = 4; // per-motor speeds [rad/s]
+}
+
+// Generic time-stamped scalar, used for user-declared extra fields.
+message Scalar {
+  double time = 1;
+  double value = 2;
+}

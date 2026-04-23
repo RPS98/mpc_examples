@@ -1,6 +1,6 @@
 controller:
-  solver_definition_path: 'configs/solver_definitions/solver_definition_mpc_trajectory.yaml'
-  ocp_json_file_path: 'examples/acados_trajectory_mpc/mpc_generated_code/acados_ocp.json'
+  solver_definition_path: 'libs/acados_trajectory_mpc/configs/solver_definition.yaml'
+  ocp_json_file_path: 'libs/acados_trajectory_mpc/mpc_generated_code/acados_ocp.json'
 
 mpc:
   parameters:

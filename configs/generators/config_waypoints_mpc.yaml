@@ -1,0 +1,10 @@
+# Waypoint reference generator config tuned for MPC-Position.
+#
+# The MPC-Position controller computes the horizon-aware reference
+# progression min(target, current + v_max * dt * k) internally
+# (see setProgressiveReferences in mpc_position_controller.cpp). It expects
+# the generator to hand it the raw target waypoint every tick, so the
+# WaypointReferenceGenerator is configured with an effectively-infinite
+# d_max to disable the distance clamp used by the PID case.
+d_max: 1.0e9
+reach_threshold: 0.1

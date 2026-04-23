@@ -1,0 +1,39 @@
+# Example-level configuration: sampling cadence, cruise speed, and a list
+# of trajectories to plan back-to-back.
+#
+# Each entry under `trajectories:` is produced by a single call to
+# `TrajectoryGenerator::generate()`, reusing the same generator instance.
+# The list demonstrates three behaviours:
+#
+#   1. Multi-waypoint: 4 waypoints, endpoints at rest.
+#   2. Chained: 2 waypoints, initial velocity inherited from the final
+#      velocity of the previous trajectory (smooth continuation).
+#   3. Single-waypoint: intentionally too few waypoints — `generate()`
+#      fails gracefully without destroying the generator, and the loop
+#      moves on.
+
+simulation:
+  step_dt: 0.01                 # sampling period [s]
+  max_speed: 3.0                # cruise speed [m/s]
+
+trajectories:
+  - label: "multi_waypoint"
+    output_csv: "traj_multi.csv"
+    waypoints:
+      - [0.0, 0.0, 1.0]
+      - [5.0, 2.0, 1.5]
+      - [8.0, 0.0, 2.0]
+      - [10.0, 4.0, 2.5]
+
+  - label: "chained_with_velocity"
+    output_csv: "traj_chained.csv"
+    # Starts where the previous one ended, carrying its final velocity so
+    # the concatenation of CSVs is smooth (no discontinuity at the seam).
+    waypoints:
+      - [10.0, 4.0, 2.5]
+      - [0.0, 0.0, 1.0]
+
+  - label: "single_waypoint_fails"
+    output_csv: "traj_single.csv"   # not written: generate() returns false
+    waypoints:
+      - [5.0, 5.0, 2.0]

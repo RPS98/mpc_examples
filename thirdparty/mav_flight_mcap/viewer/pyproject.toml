@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mav_flight_viewer"
+version = "0.2.0"
+authors = [
+    { name = "Rafael Pérez Seguí", email = "r.psegui@upm.es" },
+]
+description = "Matplotlib viewer for ROS 2-compatible mav_flight_mcap MCAP files"
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.9"
+dependencies = [
+    "matplotlib>=3.5",
+    "mcap>=1.0",
+    "numpy>=1.22",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+mav-view = "mav_flight_viewer.cli:main"
+mav-metrics = "mav_flight_viewer.compute_metrics:main"
+mav-dashboard = "mav_flight_viewer.dashboard:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mav_flight_viewer"]

@@ -1,17 +1,64 @@
 sim_config:
-  sim_time: 36.0        # Total simulation time (s)
-  model_dt: 0.001       # Physics model timestep - 1000Hz
-  controller_dt: 0.002  # INDI + IMU update timestep - 500Hz
-  mpc_dt: 0.01          # MPC control timestep - 100Hz
-  pid_dt: 0.01          # PID control timestep - 100Hz
-  max_speed: 3.0        # m/s reference advance speed
-  hover_time: 5.0       # seconds to hover after trajectory
+  # --- Simulation timing ------------------------------------------------------
+  sim_time: 36.0              # Total simulation time (s)
+  model_dt: 0.001             # Physics model timestep - 1000 Hz
+  controller_dt: 0.002        # INDI + IMU update timestep - 500 Hz
+  mpc_dt: 0.01                # MPC control timestep - 100 Hz
+  pid_dt: 0.01                # PID control timestep - 100 Hz
+
+  # --- Mission parameters -----------------------------------------------------
+  max_speed: 3.0              # m/s, used by generators and scheduler
+  hover_time: 5.0             # Seconds to hover after the last waypoint
+  settle_margin_s: 2.0        # Extra time added to every waypoint hop (stabilisation)
   path_facing: true
-  benchmark: false      # When true: disables CSV logging for performance measurement
-  silent: true          # When true: suppresses in-loop console output (progress bar, waypoint messages)
+
+  # --- Logging / runtime ------------------------------------------------------
+  benchmark: false            # When true, disables CSV logging for pure timing runs.
+  silent: true                # When true, suppresses progress bar output.
+  parallel: true              # When true, the entry-point launches one worker
+                              # (std::thread in C++, subprocess in Python) per
+                              # enabled case. CLI flag --parallel forces true.
+                              # Note: combine with controller_delay_mode: fixed
+                              # for reproducible *_compute_time_us — wall-clock
+                              # contention between workers contaminates
+                              # 'measured' delays.
+
+  # --- Compute-delay model ----------------------------------------------------
+  # controller_delay_mode: "measured" uses the wall-clock time of each
+  #   computeCommand() as the delay applied to the command before the
+  #   simulator consumes it. "fixed" ignores the measurement and always
+  #   applies controller_delay_fixed_s seconds instead.
+  # generator_delay_mode / generator_delay_fixed_s: same semantics for the
+  #   trajectory generator output (references).
+  controller_delay_mode: measured
+  controller_delay_fixed_s: 0.0
+  generator_delay_mode: measured
+  generator_delay_fixed_s: 0.0
+
+  # --- Waypoints (world frame, m) ---------------------------------------------
   waypoints:
     - [00.0, 00.0, 10.0]
     - [10.0, 00.0, 10.0]
     - [10.0, 10.0, 20.0]
     - [00.0, 10.0, 20.0]
     - [00.0, 00.0, 10.0]
+
+  # --- Batch of controller × generator cases ----------------------------------
+  # A single list of runs consumed by two executables:
+  #   - position_examples     picks entries whose generator is `waypoints`.
+  #   - trajectory_examples   picks entries whose generator is `gcopter` or
+  #                           `jerk_limited`.
+  # Any enabled entry outside a binary's scope is skipped with a log-info.
+  # `generator_config` overrides the default YAML path for that generator;
+  # it lets the two `waypoints` cases share the same adapter while using
+  # different tunings (distance-clamped for PID, raw target for MPC-Position).
+  runs:
+    # --- consumed by position_examples ---
+    - { controller: pid,            generator: waypoints,    enabled: true }
+    - { controller: mpc_position,   generator: waypoints,    enabled: true,
+        generator_config: configs/generators/config_waypoints_mpc.yaml }
+    # --- consumed by trajectory_examples ---
+    - { controller: pid,            generator: gcopter,      enabled: true }
+    - { controller: pid,            generator: jerk_limited, enabled: true }
+    - { controller: mpc_trajectory, generator: gcopter,      enabled: true }
+    - { controller: mpc_trajectory, generator: jerk_limited, enabled: true }

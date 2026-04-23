@@ -2,15 +2,24 @@
 # Copyright 2025 Universidad Politécnica de Madrid
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# Run the 12 unified-framework examples and leave one CSV per run under
-# simulator_logs/. Configurations used by each example are the defaults baked
-# into its CLI (configs/controllers/config_<ctrl>.yaml + configs/generators/config_<traj>.yaml).
+# Run the mpc_examples showcase. Dispatches through the two C++ binaries
+# (``position_examples``, ``trajectory_examples``) and/or their Python
+# counterparts (``python3 -m examples_py.runs.run_*``) and then runs the
+# metrics + dashboard tools shipped inside ``mav_flight_viewer``
+# (thirdparty/mav_flight_mcap/viewer).
 #
 # Usage:
-#   scripts/run_all.sh [--lang=cpp|py|both]     (default: cpp)
+#   scripts/run_all.sh [--lang=cpp|py|both] [--run-id=<id>] [--show]
 #
-# The ``py`` backend requires the CMake build to have run at least once so the
-# pure-Python adapters and framework are symlinked under build/python/.
+# Defaults:
+#   --lang=both
+#   --run-id auto-generated as YYYYmmdd_HHMMSS (shared by both langs so the
+#   CSVs land under simulator_logs/<run_id>/{cpp,py}/).
+#   --show     Display the dashboard window interactively after saving it.
+#
+# The ``py`` backend requires the CMake build to have run at least once so
+# the pure-Python mirrors (examples_py, mav_flight_mcap, mav_flight_viewer)
+# are exposed under build/python/.
 
 set -euo pipefail
 
@@ -20,14 +29,23 @@ cd "$REPO_ROOT"
 
 export PYTHONPATH="${REPO_ROOT}/build/python:${PYTHONPATH:-}"
 
-mkdir -p simulator_logs
+# Defensive LD_LIBRARY_PATH so the pybind .so files under build/python/mavpy/
+# can resolve their NEEDED native libraries regardless of any conflicting
+# paths the user may already have exported.
+export LD_LIBRARY_PATH="${REPO_ROOT}/build/mav_model/mav_model:\
+${REPO_ROOT}/build/mav_controllers/libs/pid_controller:\
+${LD_LIBRARY_PATH:-}"
 
-LANG_SEL="cpp"
+LANG_SEL="both"
+RUN_ID=""
+SHOW=0
 for arg in "$@"; do
   case "$arg" in
-    --lang=*) LANG_SEL="${arg#--lang=}" ;;
+    --lang=*)   LANG_SEL="${arg#--lang=}" ;;
+    --run-id=*) RUN_ID="${arg#--run-id=}" ;;
+    --show)     SHOW=1 ;;
     -h|--help)
-      grep '^#' "$0" | sed 's/^# \?//' | head -20
+      grep '^#' "$0" | sed 's/^# \?//' | head -25
       exit 0
       ;;
     *) echo "[err ] unknown argument: $arg" >&2; exit 2 ;;
@@ -39,103 +57,72 @@ case "$LANG_SEL" in
   *) echo "[err ] --lang must be cpp|py|both (got: $LANG_SEL)" >&2; exit 2 ;;
 esac
 
-CONTROLLERS=("pid" "mpc_position" "mpc_trajectory")
-GENERATORS=("waypoints" "jerk_limited" "gcopter" "dynamic")
+if [[ -z "$RUN_ID" ]]; then
+  RUN_ID="$(date +%Y%m%d_%H%M%S)"
+fi
+OUT_DIR="simulator_logs/${RUN_ID}"
+mkdir -p "$OUT_DIR"
 
-controller_cfg() {
-  case "$1" in
-    pid)             echo "configs/controllers/config_pid.yaml" ;;
-    mpc_position)    echo "configs/controllers/config_mpc.yaml" ;;
-    mpc_trajectory)  echo "configs/controllers/config_mpc_trajectory.yaml" ;;
-  esac
-}
+echo "[run_all] run_id=${RUN_ID} · output_dir=${OUT_DIR} · lang=${LANG_SEL}"
 
-generator_cfg() {
-  case "$1" in
-    waypoints)     echo "configs/generators/config_waypoints.yaml" ;;
-    jerk_limited)  echo "configs/generators/config_jerk_limited.yaml" ;;
-    gcopter)       echo "configs/generators/config_gcopter.yaml" ;;
-    dynamic)       echo "configs/generators/config_dynamic.yaml" ;;
-  esac
-}
+EXAMPLE_CFG="configs/simulation/config_example.yaml"
+SIM_CFG="configs/simulation/config_simulator.yaml"
 
 run_cpp() {
-  local ctrl="$1" gen="$2"
-  local exe="./build/examples/mpc_examples_run_${ctrl}_${gen}"
-  local out="simulator_logs/${ctrl}_${gen}_log.csv"
-  if [[ ! -x "$exe" ]]; then
-    echo "[skip cpp] $exe not built"
-    return 0
-  fi
-  echo "[run  cpp] ${ctrl}_${gen}"
-  rm -f "$out"
-  local rc=0
-  if [[ "$ctrl" == "pid" && "$gen" == "waypoints" ]]; then
+  local pos_exe="./build/examples_cpp/position_examples"
+  local traj_exe="./build/examples_cpp/trajectory_examples"
+  for exe in "$pos_exe" "$traj_exe"; do
+    if [[ ! -x "$exe" ]]; then
+      echo "[skip cpp] $exe not built"
+      continue
+    fi
+    echo "[run  cpp] $(basename "$exe")"
     "$exe" \
-      -c configs/simulation/config_example.yaml \
-      -s configs/simulation/config_simulator.yaml \
-      -p configs/controllers/config_pid.yaml \
-      -f "$out" >/dev/null || rc=$?
-  else
-    "$exe" \
-      -c configs/simulation/config_example.yaml \
-      -s configs/simulation/config_simulator.yaml \
-      -k "$(controller_cfg "$ctrl")" \
-      -t "$(generator_cfg "$gen")" \
-      -f "$out" >/dev/null || rc=$?
-  fi
-  if [[ $rc -ne 0 ]]; then
-    echo "          [fail cpp ${ctrl}_${gen}] exit=$rc"
-  else
-    echo "          -> $out"
-  fi
+      -c "$EXAMPLE_CFG" \
+      -s "$SIM_CFG" \
+      --output-dir "$OUT_DIR"
+  done
 }
 
 run_py() {
-  local ctrl="$1" gen="$2"
-  local script="examples/examples/${ctrl}_${gen}/run_example.py"
-  local out="simulator_logs/${ctrl}_${gen}_py_log.csv"
-  if [[ ! -f "$script" ]]; then
-    echo "[skip py ] $script not found"
+  if ! python3 -c 'import examples_py' 2>/dev/null; then
+    echo "[skip py ] examples_py not available on PYTHONPATH"
     return 0
   fi
-  echo "[run  py ] ${ctrl}_${gen}"
-  rm -f "$out"
-  local rc=0
-  if [[ "$ctrl" == "pid" && "$gen" == "waypoints" ]]; then
-    python3 "$script" \
-      -c configs/simulation/config_example.yaml \
-      -s configs/simulation/config_simulator.yaml \
-      -p configs/controllers/config_pid.yaml \
-      -f "$out" >/dev/null || rc=$?
-  else
-    python3 "$script" \
-      -c configs/simulation/config_example.yaml \
-      -s configs/simulation/config_simulator.yaml \
-      -k "$(controller_cfg "$ctrl")" \
-      -t "$(generator_cfg "$gen")" \
-      -f "$out" >/dev/null || rc=$?
-  fi
-  if [[ $rc -ne 0 ]]; then
-    echo "          [fail py  ${ctrl}_${gen}] exit=$rc"
-  else
-    echo "          -> $out"
-  fi
+  for runner in run_position_examples run_trajectory_examples; do
+    echo "[run  py ] examples_py.runs.${runner}"
+    python3 -m "examples_py.runs.${runner}" \
+      -c "$EXAMPLE_CFG" \
+      -s "$SIM_CFG" \
+      --output-dir "$OUT_DIR"
+  done
 }
 
-for ctrl in "${CONTROLLERS[@]}"; do
-  for gen in "${GENERATORS[@]}"; do
-    case "$LANG_SEL" in
-      cpp)  run_cpp "$ctrl" "$gen" ;;
-      py)   run_py  "$ctrl" "$gen" ;;
-      both) run_cpp "$ctrl" "$gen"; run_py "$ctrl" "$gen" ;;
-    esac
-  done
-done
+case "$LANG_SEL" in
+  cpp)  run_cpp ;;
+  py)   run_py ;;
+  both) run_cpp; run_py ;;
+esac
 
 echo ""
-case "$LANG_SEL" in
-  cpp)  echo "Done. 12 C++ CSV files in simulator_logs/." ;;
-  py)   echo "Done. 12 Python CSV files in simulator_logs/ (suffix: _py_log.csv)." ;;
-  both) echo "Done. 12 C++ + 12 Python CSV files in simulator_logs/." ;;
-esac
+echo "[run_all] computing metrics"
+# TODO: remove once MCAP pipeline validated.
+# python3 -m mav_flight_logger.compute_metrics --run-dir "$OUT_DIR" || true
+python3 -m mav_flight_viewer.compute_metrics --run-dir "$OUT_DIR" || true
+
+echo ""
+echo "[run_all] rendering dashboard"
+# TODO: remove once MCAP pipeline validated.
+# if [[ "$SHOW" -eq 1 ]]; then
+#   python3 -m mav_flight_logger.dashboard --run-dir "$OUT_DIR" --show || true
+# else
+#   python3 -m mav_flight_logger.dashboard --run-dir "$OUT_DIR" || true
+# fi
+if [[ "$SHOW" -eq 1 ]]; then
+  python3 -m mav_flight_viewer.dashboard --run-dir "$OUT_DIR" --show || true
+else
+  python3 -m mav_flight_viewer.dashboard --run-dir "$OUT_DIR" || true
+fi
+
+echo ""
+echo "[run_all] done · $OUT_DIR"
