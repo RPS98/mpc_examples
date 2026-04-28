@@ -36,7 +36,8 @@ double wrapToPi(double x) {
   return x;
 }
 
-mav_trajectory_generation_cpp::Solver parseSolver(const std::string& value, const std::string& path) {
+mav_trajectory_generation_cpp::Solver parseSolver(const std::string& value,
+                                                  const std::string& path) {
   if (value == "linear") {
     return mav_trajectory_generation_cpp::Solver::Linear;
   }
@@ -70,17 +71,17 @@ MavTrajGenGenerator::Config MavTrajGenGenerator::loadConfigFromYaml(const std::s
   }
 
   // a_max: optional double, used by both solvers (timing alloc + nonlinear bound).
-  cfg.optimization.a_max = detail::readDoubleOptional(opt["a_max"], "optimization.a_max",
-                                                       cfg.optimization.a_max);
+  cfg.optimization.a_max =
+      detail::readDoubleOptional(opt["a_max"], "optimization.a_max", cfg.optimization.a_max);
 
   // NLopt-only knobs: optional doubles / ints.
   if (opt["nl_max_iterations"]) {
     cfg.optimization.nl_max_iterations = opt["nl_max_iterations"].as<int>();
   }
   cfg.optimization.nl_f_rel = detail::readDoubleOptional(opt["nl_f_rel"], "optimization.nl_f_rel",
-                                                          cfg.optimization.nl_f_rel);
+                                                         cfg.optimization.nl_f_rel);
   cfg.optimization.nl_x_rel = detail::readDoubleOptional(opt["nl_x_rel"], "optimization.nl_x_rel",
-                                                          cfg.optimization.nl_x_rel);
+                                                         cfg.optimization.nl_x_rel);
   cfg.optimization.nl_time_penalty = detail::readDoubleOptional(
       opt["nl_time_penalty"], "optimization.nl_time_penalty", cfg.optimization.nl_time_penalty);
   cfg.optimization.nl_initial_stepsize_rel = detail::readDoubleOptional(

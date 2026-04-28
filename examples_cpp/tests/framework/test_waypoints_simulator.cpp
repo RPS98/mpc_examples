@@ -51,10 +51,10 @@ TEST(WaypointsSimulatorTest, RejectsNullController) {
 }
 
 TEST(WaypointsSimulatorTest, RejectsNullGenerator) {
-  auto cfg  = loadTestSimConfig();
-  auto sp   = loadTestSimParams();
-  auto pid  = makeController(ControllerKeys::kPid,
-                             repoPath("configs/controllers/config_pid.yaml"), false);
+  auto cfg = loadTestSimConfig();
+  auto sp  = loadTestSimParams();
+  auto pid =
+      makeController(ControllerKeys::kPid, repoPath("configs/controllers/config_pid.yaml"), false);
   EXPECT_THROW(WaypointsSimulator(std::move(pid), nullptr, cfg, sp, "", makeMeta()),
                std::invalid_argument);
 }
@@ -62,9 +62,9 @@ TEST(WaypointsSimulatorTest, RejectsNullGenerator) {
 TEST(WaypointsSimulatorTest, RejectsEmptyWaypointList) {
   auto cfg = loadTestSimConfig();
   cfg.waypoints.clear();
-  auto sp  = loadTestSimParams();
-  auto pid = makeController(ControllerKeys::kPid,
-                            repoPath("configs/controllers/config_pid.yaml"), false);
+  auto sp = loadTestSimParams();
+  auto pid =
+      makeController(ControllerKeys::kPid, repoPath("configs/controllers/config_pid.yaml"), false);
   auto gen = makeGenerator(GeneratorKeys::kWaypoints,
                            repoPath("configs/generators/config_waypoints.yaml"));
   EXPECT_THROW(WaypointsSimulator(std::move(pid), std::move(gen), cfg, sp, "", makeMeta()),
@@ -73,16 +73,16 @@ TEST(WaypointsSimulatorTest, RejectsEmptyWaypointList) {
 
 TEST(WaypointsSimulatorTest, RunCompletesAndReportsBenchmarkStats) {
   auto cfg          = loadTestSimConfig();
-  cfg.sim_time      = 0.5;     // tight; we just check the loop wires up.
+  cfg.sim_time      = 0.5;  // tight; we just check the loop wires up.
   cfg.hover_time    = 0.0;
   cfg.silent        = true;
-  cfg.benchmark     = true;    // skip on-disk logging.
+  cfg.benchmark     = true;  // skip on-disk logging.
   cfg.output_format = "mcap";
   auto sp           = loadTestSimParams();
-  auto pid          = makeController(ControllerKeys::kPid,
-                                     repoPath("configs/controllers/config_pid.yaml"), false);
-  auto gen          = makeGenerator(GeneratorKeys::kWaypoints,
-                                    repoPath("configs/generators/config_waypoints.yaml"));
+  auto pid =
+      makeController(ControllerKeys::kPid, repoPath("configs/controllers/config_pid.yaml"), false);
+  auto gen = makeGenerator(GeneratorKeys::kWaypoints,
+                           repoPath("configs/generators/config_waypoints.yaml"));
 
   // Empty output_csv disables logging — we are just exercising the run loop.
   WaypointsSimulator sim(std::move(pid), std::move(gen), cfg, sp, /*output_csv=*/"", makeMeta());

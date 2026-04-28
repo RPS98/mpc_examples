@@ -148,7 +148,7 @@ void GcopterGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
   std::vector<gcopter_lib::Waypoint> wps(2);
   wps[0].position = p0;
   wps[1].position = next_waypoint;
-  has_plan_ = ctrl_->generate(wps, cfg_.drone_limits.max_velocity);
+  has_plan_       = ctrl_->generate(wps, cfg_.drone_limits.max_velocity);
   if (!has_plan_) {
     // Fall back to a static setpoint at next_waypoint. The comparison remains
     // meaningful: gcopter failing here is an intrinsic property of batch

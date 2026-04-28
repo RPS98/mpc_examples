@@ -25,8 +25,8 @@ protected:
 
   void SetUp() override {
     // Loads the real controller YAML shipped under configs/controllers/.
-    auto cfg =
-        PidPositionGeometricController::loadConfigFromYaml(repoPath("configs/controllers/config_pid.yaml"));
+    auto cfg = PidPositionGeometricController::loadConfigFromYaml(
+        repoPath("configs/controllers/config_pid.yaml"));
     ctrl_ = std::make_unique<PidPositionGeometricController>(cfg);
     ctrl_->initialize(state_, sim_cfg_);
   }

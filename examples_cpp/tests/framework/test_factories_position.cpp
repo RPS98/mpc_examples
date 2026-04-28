@@ -37,8 +37,7 @@ TEST(FactoriesPositionTest, RejectsUnknownGeneratorKey) {
 
 TEST(FactoriesPositionTest, BuildsPidAndWaypointsAdaptersFromYaml) {
   using mpc_examples::testing::repoPath;
-  auto pid = makeController(ControllerKeys::kPid,
-                            repoPath("configs/controllers/config_pid.yaml"));
+  auto pid = makeController(ControllerKeys::kPid, repoPath("configs/controllers/config_pid.yaml"));
   ASSERT_NE(pid, nullptr);
   EXPECT_FALSE(pid->name().empty());
 
@@ -50,7 +49,7 @@ TEST(FactoriesPositionTest, BuildsPidAndWaypointsAdaptersFromYaml) {
 
 TEST(FactoriesPositionTest, BuildsMpcPositionFromYaml) {
   using mpc_examples::testing::repoPath;
-  auto mpc = makeController(ControllerKeys::kMpcPosition,
-                            repoPath("configs/controllers/config_mpc.yaml"));
+  auto mpc =
+      makeController(ControllerKeys::kMpcPosition, repoPath("configs/controllers/config_mpc.yaml"));
   ASSERT_NE(mpc, nullptr);
 }

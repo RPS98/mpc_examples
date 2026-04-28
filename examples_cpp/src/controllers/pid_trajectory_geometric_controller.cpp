@@ -57,8 +57,7 @@ pid_controller::PIDParameters<double> parsePidParameters(const YAML::Node& node,
 
 }  // namespace
 
-PidTrajectoryGeometricController::PidTrajectoryGeometricController(const Config& cfg)
-    : cfg_(cfg) {
+PidTrajectoryGeometricController::PidTrajectoryGeometricController(const Config& cfg) : cfg_(cfg) {
   if (cfg_.v_max <= 0.0) {
     throw std::invalid_argument("PidTrajectoryGeometricController: v_max must be > 0.");
   }
@@ -108,7 +107,8 @@ void PidTrajectoryGeometricController::initialize(const mav_model::State& /*init
                                                   const ExampleConfig& example_cfg) {
   control_period_ = example_cfg.pid_dt;
   if (control_period_ <= 0.0) {
-    throw std::invalid_argument("PidTrajectoryGeometricController: example_cfg.pid_dt must be > 0.");
+    throw std::invalid_argument(
+        "PidTrajectoryGeometricController: example_cfg.pid_dt must be > 0.");
   }
 
   pid_controllers::TrajectoryControllerParameters<double> traj_params;

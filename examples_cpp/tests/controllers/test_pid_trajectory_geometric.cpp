@@ -11,8 +11,8 @@
 #include "test_helpers.hpp"
 
 using mpc_examples::adapters::PidTrajectoryGeometricController;
-using mpc_examples::framework::ReferenceField;
 using mpc_examples::framework::hasField;
+using mpc_examples::framework::ReferenceField;
 using mpc_examples::testing::horizonAtPosition;
 using mpc_examples::testing::hoverStateAt;
 using mpc_examples::testing::loadTestSimConfig;

@@ -150,7 +150,7 @@ void runCase(const mpc_examples::RunSpec& spec,
   }
   try {
     auto controller = framework::makeController(spec.controller, spec.controller_config,
-                                                 /*is_trajectory_scope=*/true);
+                                                /*is_trajectory_scope=*/true);
     auto generator  = framework::makeGenerator(spec.generator, spec.generator_config);
 
     framework::RunMetadata meta;
