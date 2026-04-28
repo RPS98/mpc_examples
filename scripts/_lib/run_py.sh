@@ -14,11 +14,21 @@ run_one_py() {
     echo "[err] examples_py not importable. Run ./build.sh first." >&2
     return 1
   fi
+  # Peel off plotter flags (handled by post_run_review) from the runner args.
+  local review_flags=()
+  local mod_args=()
+  for arg in "$@"; do
+    case "${arg}" in
+      --no-show|--no-save) review_flags+=("${arg}") ;;
+      *) mod_args+=("${arg}") ;;
+    esac
+  done
   ensure_output_dir
   echo "[run py ] examples_py.runs.${module}"
   python3 -m "examples_py.runs.${module}" \
     -c "${EXAMPLE_CFG}" \
     -s "${SIM_CFG}" \
     --output-dir "${OUTPUT_DIR}" \
-    "$@"
+    "${mod_args[@]}"
+  post_run_review "${OUTPUT_DIR}" "${review_flags[@]}"
 }

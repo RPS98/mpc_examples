@@ -25,30 +25,36 @@ namespace mpc_examples::framework {
 
 /** @brief Canonical controller keys accepted by makeController(). */
 struct ControllerKeys {
-  static constexpr const char* kPid            = "pid";
-  static constexpr const char* kMpcPosition    = "mpc_position";
-  static constexpr const char* kMpcTrajectory  = "mpc_trajectory";
+  static constexpr const char* kPid           = "pid";
+  static constexpr const char* kMpcPosition   = "mpc_position";
+  static constexpr const char* kMpcTrajectory = "mpc_trajectory";
 };
 
 /** @brief Canonical generator keys accepted by makeGenerator(). */
 struct GeneratorKeys {
-  static constexpr const char* kWaypoints    = "waypoints";
-  static constexpr const char* kJerkLimited  = "jerk_limited";
-  static constexpr const char* kGcopter      = "gcopter";
-  static constexpr const char* kDynamic      = "dynamic";
+  static constexpr const char* kWaypoints   = "waypoints";
+  static constexpr const char* kJerkLimited = "jerk_limited";
+  static constexpr const char* kGcopter     = "gcopter";
+  static constexpr const char* kDynamic     = "dynamic";
+  static constexpr const char* kMavTrajGen  = "mav_traj_gen";
 };
 
 /**
  * @brief Build a controller from its string key and YAML path.
  *
- * @param name        Controller key (see ControllerKeys). Case-sensitive.
- * @param config_path Absolute or relative path to the controller YAML. If
- *                    empty, the factory falls back to the default path under
- *                    `configs/controllers/`.
+ * @param name                 Controller key (see ControllerKeys). Case-sensitive.
+ * @param config_path          Absolute or relative path to the controller YAML. If
+ *                             empty, the factory falls back to the default path under
+ *                             `configs/controllers/`.
+ * @param is_trajectory_scope  For the PID controller, determines whether to use
+ *                             PidTrajectoryGeometricController (true) or
+ *                             PidPositionGeometricController (false). Ignored for
+ *                             MPC controllers. Defaults to false.
  * @throws std::invalid_argument if @p name is not recognised.
  */
 std::unique_ptr<IController> makeController(const std::string& name,
-                                            const std::string& config_path);
+                                            const std::string& config_path,
+                                            bool is_trajectory_scope = false);
 
 /**
  * @brief Build a trajectory generator from its string key and YAML path.

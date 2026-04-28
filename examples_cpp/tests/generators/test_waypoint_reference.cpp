@@ -17,7 +17,7 @@ using mpc_examples::testing::repoPath;
 class WaypointReferenceGeneratorTest : public ::testing::Test {
 protected:
   mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
-  mav_model::State            state_   = hoverStateAt({0.0, 0.0, 10.0});
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
   std::unique_ptr<WaypointReferenceGenerator> gen_;
 
   void SetUp() override {
@@ -37,12 +37,12 @@ TEST_F(WaypointReferenceGeneratorTest, ProducesFiniteReferencesOver50Steps) {
     gen_->update(t, state_);
     const auto s = gen_->evaluate(t);
     ASSERT_TRUE(s.position.allFinite()) << "step " << k;
-    ASSERT_TRUE(std::isfinite(s.yaw))   << "step " << k;
+    ASSERT_TRUE(std::isfinite(s.yaw)) << "step " << k;
   }
 }
 
 TEST_F(WaypointReferenceGeneratorTest, AdvertisesPositionField) {
   const auto mask = gen_->providedReferenceFields();
-  EXPECT_TRUE(mpc_examples::framework::hasField(
-      mask, mpc_examples::framework::ReferenceField::kPosition));
+  EXPECT_TRUE(
+      mpc_examples::framework::hasField(mask, mpc_examples::framework::ReferenceField::kPosition));
 }

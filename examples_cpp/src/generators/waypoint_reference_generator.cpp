@@ -49,8 +49,7 @@ WaypointReferenceGenerator::WaypointReferenceGenerator(const Config& cfg) : cfg_
     throw std::invalid_argument("WaypointReferenceGenerator: d_max must be > 0.");
   }
   if (cfg_.reach_threshold <= 0.0) {
-    throw std::invalid_argument(
-        "WaypointReferenceGenerator: reach_threshold must be > 0.");
+    throw std::invalid_argument("WaypointReferenceGenerator: reach_threshold must be > 0.");
   }
 }
 
@@ -62,8 +61,7 @@ WaypointReferenceGenerator::Config WaypointReferenceGenerator::loadConfigFromYam
     cfg.d_max = detail::readDoubleRequired(root["d_max"], "d_max");
   }
   if (root["reach_threshold"]) {
-    cfg.reach_threshold =
-        detail::readDoubleRequired(root["reach_threshold"], "reach_threshold");
+    cfg.reach_threshold = detail::readDoubleRequired(root["reach_threshold"], "reach_threshold");
   }
   return cfg;
 }
@@ -83,8 +81,7 @@ void WaypointReferenceGenerator::onWaypointChanged(const Eigen::Vector3d& next_w
   last_position_         = state.getPositionVector();
   const double drone_yaw = quaternionToEuler(state.getOrientationVector()).z();
   cached_yaw_            = path_facing_
-                               ? pathFacingYaw(last_position_, target_wp_, drone_yaw,
-                                    cfg_.reach_threshold)
+                               ? pathFacingYaw(last_position_, target_wp_, drone_yaw, cfg_.reach_threshold)
                                : 0.0;
 }
 

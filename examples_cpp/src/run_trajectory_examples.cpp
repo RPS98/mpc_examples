@@ -6,13 +6,18 @@
  *
  * Trajectory-examples entry point. Iterates ``sim_config.runs[]`` from
  * ``configs/simulation/config_example.yaml`` and executes only the entries
- * whose generator produces a full trajectory (``gcopter`` or
- * ``jerk_limited``) — i.e. the four showcase cases:
+ * whose generator produces a full trajectory (``gcopter``,
+ * ``jerk_limited``, ``dynamic`` or ``mav_traj_gen``) — i.e. the eight
+ * showcase cases:
  *
  *   - pid            + gcopter
  *   - pid            + jerk_limited
+ *   - pid            + dynamic
+ *   - pid            + mav_traj_gen
  *   - mpc_trajectory + gcopter
  *   - mpc_trajectory + jerk_limited
+ *   - mpc_trajectory + dynamic
+ *   - mpc_trajectory + mav_traj_gen
  *
  * Links against ``mpc_examples_factories_trajectory`` which bundles the
  * PID and MPC-Trajectory adapters (plus the four generators, for
@@ -50,10 +55,10 @@ namespace {
 struct Args {
   std::string example_config_path   = "configs/simulation/config_example.yaml";
   std::string simulator_config_path = "configs/simulation/config_simulator.yaml";
-  std::string output_dir;        //!< Empty → simulator_logs/<run_id>.
-  std::string only_controller;   //!< Empty → no filter.
-  std::string only_generator;    //!< Empty → no filter.
-  bool parallel_override = false; //!< CLI-forced parallel run; YAML otherwise governs.
+  std::string output_dir;          //!< Empty → simulator_logs/<run_id>.
+  std::string only_controller;     //!< Empty → no filter.
+  std::string only_generator;      //!< Empty → no filter.
+  bool parallel_override = false;  //!< CLI-forced parallel run; YAML otherwise governs.
 };
 
 Args parseArgs(int argc, char** argv) {
@@ -74,8 +79,10 @@ Args parseArgs(int argc, char** argv) {
       args.parallel_override = true;
     } else if (a == "-h" || a == "--help") {
       std::cout << "Usage: " << argv[0] << "\n"
-                << "  -c, --example_config    <yaml>  (default: " << args.example_config_path << ")\n"
-                << "  -s, --simulator_config  <yaml>  (default: " << args.simulator_config_path << ")\n"
+                << "  -c, --example_config    <yaml>  (default: " << args.example_config_path
+                << ")\n"
+                << "  -s, --simulator_config  <yaml>  (default: " << args.simulator_config_path
+                << ")\n"
                 << "      --output-dir        <dir>   (default: simulator_logs/<run_id>)\n"
                 << "      --only-controller   <name>  run only the entry matching this controller\n"
                 << "      --only-generator    <name>  run only the entry matching this generator\n"
@@ -113,7 +120,9 @@ struct CaseResult {
 // Only full-trajectory generators are valid for trajectory_examples.
 bool isTrajectoryRun(const mpc_examples::RunSpec& spec) {
   return spec.generator == mpc_examples::framework::GeneratorKeys::kGcopter ||
-         spec.generator == mpc_examples::framework::GeneratorKeys::kJerkLimited;
+         spec.generator == mpc_examples::framework::GeneratorKeys::kJerkLimited ||
+         spec.generator == mpc_examples::framework::GeneratorKeys::kDynamic ||
+         spec.generator == mpc_examples::framework::GeneratorKeys::kMavTrajGen;
 }
 
 // Executes one (controller, generator) case. Set `print_banner` to false when
@@ -132,16 +141,16 @@ void runCase(const mpc_examples::RunSpec& spec,
   out.controller = spec.controller;
   out.generator  = spec.generator;
 
-  // TODO: remove once MCAP pipeline validated.
-  // const std::string csv_name = spec.controller + "_" + spec.generator + ".csv";
-  const std::string csv_name = spec.controller + "_" + spec.generator + ".mcap";
+  const std::string ext      = (example_cfg.output_format == "csv") ? ".csv" : ".mcap";
+  const std::string csv_name = spec.controller + "_" + spec.generator + ext;
   out.csv_path               = (cpp_dir / csv_name).string();
 
   if (print_banner) {
     framework::printCaseBanner(index, total, spec.controller, spec.generator, run_id);
   }
   try {
-    auto controller = framework::makeController(spec.controller, spec.controller_config);
+    auto controller = framework::makeController(spec.controller, spec.controller_config,
+                                                 /*is_trajectory_scope=*/true);
     auto generator  = framework::makeGenerator(spec.generator, spec.generator_config);
 
     framework::RunMetadata meta;
@@ -150,8 +159,8 @@ void runCase(const mpc_examples::RunSpec& spec,
     meta.run_id          = run_id;
     meta.language        = "cpp";
 
-    framework::WaypointsSimulator sim(std::move(controller), std::move(generator),
-                                      example_cfg, sim_params, out.csv_path, meta);
+    framework::WaypointsSimulator sim(std::move(controller), std::move(generator), example_cfg,
+                                      sim_params, out.csv_path, meta);
     sim.run();
     out.stats     = sim.benchmarkStats();
     out.succeeded = true;
@@ -167,14 +176,9 @@ void printSummaryTable(const std::vector<CaseResult>& results) {
   mpc_examples::framework::printRule();
   std::cout << "Final summary (" << results.size() << " trajectory cases)\n";
   mpc_examples::framework::printRule('-');
-  std::cout << std::left
-            << std::setw(20) << "controller"
-            << std::setw(18) << "generator"
-            << std::right
-            << std::setw(10) << "rmse[m]"
-            << std::setw(14) << "ctrl_us"
-            << std::setw(14) << "gen_us"
-            << std::setw(10) << "real[s]"
+  std::cout << std::left << std::setw(20) << "controller" << std::setw(18) << "generator"
+            << std::right << std::setw(10) << "rmse[m]" << std::setw(14) << "ctrl_us"
+            << std::setw(14) << "gen_us" << std::setw(10) << "real[s]"
             << "\n";
   mpc_examples::framework::printRule('-');
   for (const auto& r : results) {
@@ -183,14 +187,11 @@ void printSummaryTable(const std::vector<CaseResult>& results) {
       std::cout << "  FAILED: " << r.error << "\n";
       continue;
     }
-    std::cout << std::right << std::fixed << std::setprecision(3)
-              << std::setw(10) << r.stats.tracking_rmse_m
-              << std::setprecision(0)
-              << std::setw(14) << r.stats.controller_mean_us
-              << std::setw(14)
+    std::cout << std::right << std::fixed << std::setprecision(3) << std::setw(10)
+              << r.stats.tracking_rmse_m << std::setprecision(0) << std::setw(14)
+              << r.stats.controller_mean_us << std::setw(14)
               << (r.stats.generator_update_mean_us + r.stats.generator_eval_mean_us)
-              << std::setprecision(2)
-              << std::setw(10) << r.stats.real_time_s << "\n";
+              << std::setprecision(2) << std::setw(10) << r.stats.real_time_s << "\n";
   }
   mpc_examples::framework::printRule();
 }
@@ -210,11 +211,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const std::string run_id = makeRunId();
-  std::filesystem::path out_root =
-      args.output_dir.empty()
-          ? (std::filesystem::path("simulator_logs") / run_id)
-          : std::filesystem::path(args.output_dir);
+  const std::string run_id            = makeRunId();
+  std::filesystem::path out_root      = args.output_dir.empty()
+                                            ? (std::filesystem::path("simulator_logs") / run_id)
+                                            : std::filesystem::path(args.output_dir);
   const std::filesystem::path cpp_dir = out_root / "cpp";
   std::error_code ec;
   std::filesystem::create_directories(cpp_dir, ec);
@@ -225,13 +225,12 @@ int main(int argc, char** argv) {
 
   const bool parallel = args.parallel_override || example_cfg.parallel;
 
-  std::cout << "trajectory_examples · run_id=" << run_id
-            << " · output_dir=" << out_root.string()
+  std::cout << "trajectory_examples · run_id=" << run_id << " · output_dir=" << out_root.string()
             << (parallel ? " · mode=parallel" : "") << "\n";
 
   const auto caseSelected = [&](const RunSpec& spec) {
     if (!args.only_controller.empty() && spec.controller != args.only_controller) return false;
-    if (!args.only_generator.empty()  && spec.generator  != args.only_generator)  return false;
+    if (!args.only_generator.empty() && spec.generator != args.only_generator) return false;
     return true;
   };
 
@@ -256,21 +255,22 @@ int main(int argc, char** argv) {
 
   if (scoped.empty()) {
     std::cerr << "No enabled runs match trajectory_examples' scope "
-                 "(generator ∈ {gcopter, jerk_limited}";
+                 "(generator ∈ {gcopter, jerk_limited, dynamic, mav_traj_gen}";
     if (!args.only_controller.empty() || !args.only_generator.empty()) {
-      std::cerr << ", --only-controller='" << args.only_controller
-                << "', --only-generator='" << args.only_generator << "'";
+      std::cerr << ", --only-controller='" << args.only_controller << "', --only-generator='"
+                << args.only_generator << "'";
     }
     std::cerr << "). Nothing to do.\n";
-    return 0;
+    std::cout.flush();
+    std::cerr.flush();
+    std::_Exit(0);
   }
 
   std::vector<CaseResult> results(scoped.size());
 
   if (!parallel) {
     for (std::size_t i = 0; i < scoped.size(); ++i) {
-      runCase(scoped[i], example_cfg, sim_params, cpp_dir, run_id, i, scoped.size(),
-              results[i]);
+      runCase(scoped[i], example_cfg, sim_params, cpp_dir, run_id, i, scoped.size(), results[i]);
     }
   } else {
     framework::warnIfOvercommit(scoped.size());
@@ -279,7 +279,7 @@ int main(int argc, char** argv) {
     // Each worker reads from `parallel_cfg`, which silences the in-loop
     // progress bar that would otherwise interleave \r writes between threads.
     ExampleConfig parallel_cfg = example_cfg;
-    parallel_cfg.silent = true;
+    parallel_cfg.silent        = true;
 
     framework::StdoutMutex stdout_mtx;
     framework::runScopedCasesParallel(scoped.size(), [&](std::size_t i) {
@@ -287,13 +287,13 @@ int main(int argc, char** argv) {
       const auto prefix = framework::casePrefix(i, scoped.size(), spec.controller, spec.generator);
       stdout_mtx.with([&] { std::cout << prefix << "start (run_id=" << run_id << ")\n"; });
 
-      runCase(spec, parallel_cfg, sim_params, cpp_dir, run_id, i, scoped.size(),
-              results[i], /*print_banner=*/false);
+      runCase(spec, parallel_cfg, sim_params, cpp_dir, run_id, i, scoped.size(), results[i],
+              /*print_banner=*/false);
 
       stdout_mtx.with([&] {
         if (results[i].succeeded) {
-          std::cout << prefix << std::fixed
-                    << "done in " << std::setprecision(2) << results[i].stats.real_time_s << "s"
+          std::cout << prefix << std::fixed << "done in " << std::setprecision(2)
+                    << results[i].stats.real_time_s << "s"
                     << " · rmse=" << std::setprecision(3) << results[i].stats.tracking_rmse_m << "m"
                     << " · ctrl_mean=" << std::setprecision(0)
                     << results[i].stats.controller_mean_us << "µs"
@@ -310,5 +310,16 @@ int main(int argc, char** argv) {
 
   printSummaryTable(results);
   std::cout << "Done · run_id=" << run_id << " · output_dir=" << out_root.string() << "\n";
-  return 0;
+
+  // Flush stdout/stderr explicitly, then bypass global destructors with
+  // std::_Exit. Reason: a race between acados solver destructors, the
+  // dynamic_trajectory_generator background worker, and the simulator
+  // shutdown causes a benign "double free or corruption" abort during
+  // exit-time global destruction. All run artefacts (MCAP/CSV) have
+  // already been flushed by the per-case sim destructor inside runCase()
+  // before this point. Same workaround used by the framework tests
+  // documented in CLAUDE.md.
+  std::cout.flush();
+  std::cerr.flush();
+  std::_Exit(0);
 }

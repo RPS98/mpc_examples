@@ -1,21 +1,35 @@
-v_max: 3.0 # Max velocity output from position PID (m/s)
-d_max: 2.0 # Max reference distance from current position (m)
+# Cascaded PID config tuned for the *position* scope (waypoints generator).
+#
+# The waypoint reference generator emits a position carrot clamped to d_max
+# from the drone (config_waypoints.yaml). Velocity reference is unavailable
+# in this scope so the PID closes the loop purely on position error.
+#
+# Trajectory-scope cases (jerk_limited / gcopter / mav_traj_gen) use
+# config_pid_trajectory.yaml instead — separate file with velocity
+# feedforward enabled and gains stiffened to keep up with the smooth
+# time-parameterised references emitted by those generators.
+
+v_max: 3.0           # Max velocity output from position PID (m/s)
 
 controller:
   position:
-    kp: [1.2, 1.2, 1.6] # Position controller proportional gains: [x, y, z]
-    ki: [0.0, 0.0, 0.0] # Position controller integral gains: [x, y, z]
-    kd: [0.0, 0.0, 0.0] # Position controller derivative gains: [x, y, z]
-    antiwindup_cte: 1.0 # Position controller anti-windup correction term: [x, y, z]
-    alpha: 0.2 # Position controller low-pass filter coefficient: [x, y, z]
+    # Slightly faster than the legacy values (1.2/1.6) so the position loop
+    # closes the d_max-clamped error within one cruise window without leaving
+    # the saturated v_max region for as long, which is what caused the legacy
+    # tune to overshoot max_speed (~4 m/s peak) on the waypoint case.
+    kp: [1.4, 1.4, 1.7]
+    ki: [0.0, 0.0, 0.0]
+    kd: [0.0, 0.0, 0.0]
+    antiwindup_cte: 1.0
+    alpha: 0.2
   velocity:
-    kp: [1.6, 1.6, 2.0] # Velocity controller proportional gains: [x, y, z]
-    ki: [0.0, 0.0, 0.0] # Velocity controller integral gains: [x, y, z]
-    kd: [0.35, 0.35, 0.7] # Velocity controller derivative gains: [x, y, z]
-    antiwindup_cte: 0.4 # Velocity controller anti-windup correction term: [x, y, z]
-    alpha: 0.1 # Velocity controller low-pass filter coefficient: [x, y, z]
-    saturation_upper: [10.0, 10.0, 15.0] # Velocity controller saturation upper limits: [x, y, z]
-    saturation_lower: [-10.0, -10.0, -15.0] # Velocity controller saturation lower limits: [x, y, z]
+    kp: [1.6, 1.6, 2.0]
+    ki: [0.0, 0.0, 0.0]
+    kd: [0.35, 0.35, 0.70]
+    antiwindup_cte: 0.4
+    alpha: 0.1
+    saturation_upper: [10.0, 10.0, 15.0]
+    saturation_lower: [-10.0, -10.0, -15.0]
   geometric:
-    mass: 1.140 # Mass of the vehicle
-    rotation_kp: [4.0, 4.0, 2.0] # Geometric controller proportional gains for rotation: [roll, pitch, yaw]
+    mass: 1.140
+    rotation_kp: [4.0, 4.0, 2.0]

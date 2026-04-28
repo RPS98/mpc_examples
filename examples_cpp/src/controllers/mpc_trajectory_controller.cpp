@@ -101,8 +101,8 @@ framework::ControlCommand MpcTrajectoryController::computeCommand(
   }
 
   framework::ControlCommand cmd;
-  cmd.thrust_n = mpc_data->actuation.getThrust();
-  const auto w = mpc_data->actuation.getAngularVelocity();
+  cmd.thrust_n     = mpc_data->actuation.getThrust();
+  const auto w     = mpc_data->actuation.getAngularVelocity();
   cmd.angular_rate = {w[0], w[1], w[2]};
   return cmd;
 }

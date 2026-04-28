@@ -12,10 +12,12 @@ from .waypoint_reference_generator import WaypointReferenceGenerator
 from .jerk_limited_generator import JerkLimitedGenerator
 from .gcopter_generator import GcopterGenerator
 from .dynamic_trajectory_generator import DynamicTrajectoryGenerator
+from .mav_traj_gen_generator import MavTrajGenGenerator
 
 __all__ = [
     'DynamicTrajectoryGenerator',
     'GcopterGenerator',
     'JerkLimitedGenerator',
+    'MavTrajGenGenerator',
     'WaypointReferenceGenerator',
 ]

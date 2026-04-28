@@ -4,118 +4,110 @@
 
 cmake_minimum_required(VERSION 3.16)
 set(PROJECT_NAME mpc_examples)
-project(${PROJECT_NAME})
+project(${PROJECT_NAME} LANGUAGES CXX)
 
 # --- C++ standard ---
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-# Build type
+# --- Default build type ---
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
 # ---------------------------------------------------------------------------
-# Centralized Python package root
+# Options
 # ---------------------------------------------------------------------------
-# Every thirdparty submodule that ships a Python package mirrors its compiled
-# .so and/or pure-Python tree under PYBIND_PY_MIRROR_ROOT, so a single
-# PYTHONPATH entry exposes the full namespace without needing pip install.
-# Defining it here as CACHE INTERNAL pre-empts the fallback in
-# thirdparty/mav_simulator/CMakeLists.txt (which otherwise falls back to
-# ${CMAKE_BINARY_DIR}/pybind/python) so every sub-pybind agrees on a single
-# root.
-set(PYBIND_PY_MIRROR_ROOT "${CMAKE_BINARY_DIR}/python" CACHE INTERNAL
-    "Shared Python mirror root for all pybind sub-packages and pure-Python mirrors")
-file(MAKE_DIRECTORY "${PYBIND_PY_MIRROR_ROOT}")
-message(STATUS "mpc_examples: Python packages will be gathered under ${PYBIND_PY_MIRROR_ROOT}")
-
-# Enable pybind11 modules in all participating submodules by default.
-set(BUILD_PYBIND ON CACHE BOOL "Build Python bindings in thirdparty submodules" FORCE)
-
-# Enable CTest early so add_test() calls inside add_subdirectory()'d targets
-# (e.g. examples_cpp/tests/) register correctly. The individual pytest
-# suite registrations still live at the bottom of this file.
-include(CTest)
+# This umbrella project ships both C++ binaries and Python mirrors. Pybind is
+# ON by default (the showcase needs it for the Python twins), but the user can
+# disable it for a slimmer build.
+option(BUILD_PYBIND   "Build Python bindings in thirdparty submodules" ON)
+option(BUILD_TESTING  "Enable CTest integration"                       ON)
 
 # ---------------------------------------------------------------------------
-# Thirdparty submodules
+# Dependencies (resolved up-front so every subdirectory sees them)
 # ---------------------------------------------------------------------------
-# mav_flight_logger: self-contained CSV logger + metrics + plotter reused by
-# both the C++ and Python example stacks. Kept first because it has no
-# dependencies on other thirdparty submodules.
-# TODO: remove once MCAP pipeline validated (replaced by mav_flight_mcap below).
-add_subdirectory(thirdparty/mav_flight_logger)
+find_package(yaml-cpp REQUIRED)
 
-# mav_flight_mcap: replaces mav_flight_logger as the primary telemetry backend.
-# Writes ROS 2-compatible MCAPs and ships a matplotlib viewer. Tests and the
-# internal C++ examples are disabled here — this repo ships its own examples
-# under examples_cpp/.
-set(MAV_FLIGHT_MCAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(MAV_FLIGHT_MCAP_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(MAV_FLIGHT_MCAP_BUILD_PYBIND   ON  CACHE BOOL "" FORCE)
-# Resolve fastcdr at the top-level scope so the IMPORTED target is visible to
-# every target that links against mav_flight_mcap (find_package inside the
-# subdirectory's helper function only exposes it locally). Prefer the ROS 2
-# Humble package; fall back to the system CMake paths.
+# fastcdr is consumed transitively by mav_flight_review's MCAP writer. Resolve
+# it here so the IMPORTED target is visible to every consumer (find_package
+# inside helper functions only exposes the target locally). Prefer ROS 2
+# Humble's package; fall back to system CMake paths.
 find_package(fastcdr CONFIG QUIET PATHS /opt/ros/humble /opt/ros/iron)
 if(NOT fastcdr_FOUND)
   find_package(fastcdr CONFIG QUIET)
 endif()
-add_subdirectory(thirdparty/mav_flight_mcap)
 
-# Expose the Python packages shipped by mav_flight_mcap under
-# ${PYBIND_PY_MIRROR_ROOT} so `import mav_flight_mcap` and
-# `import mav_flight_viewer` work with a single PYTHONPATH entry. Matches the
-# symlink pattern used by mav_flight_logger / mpc / mav_simulator.
-if(DEFINED PYBIND_PY_MIRROR_ROOT)
+# Enable CTest early so add_test() calls inside add_subdirectory()'d targets
+# (e.g. examples_cpp/tests/) register correctly.
+include(CTest)
+
+# ---------------------------------------------------------------------------
+# Centralized Python mirror root
+# ---------------------------------------------------------------------------
+# Every thirdparty submodule that ships a Python package mirrors its compiled
+# .so and/or pure-Python tree under PYBIND_PY_MIRROR_ROOT, so a single
+# PYTHONPATH entry exposes the full namespace without needing pip install.
+# Defining it here as CACHE INTERNAL pre-empts the per-submodule fallback so
+# every sub-pybind agrees on a single root.
+set(PYBIND_PY_MIRROR_ROOT "${CMAKE_BINARY_DIR}/python" CACHE INTERNAL
+    "Shared Python mirror root for all pybind sub-packages and pure-Python mirrors")
+file(MAKE_DIRECTORY "${PYBIND_PY_MIRROR_ROOT}")
+message(STATUS "${PROJECT_NAME}: Python packages will be gathered under ${PYBIND_PY_MIRROR_ROOT}")
+
+# ---------------------------------------------------------------------------
+# Thirdparty submodules
+# ---------------------------------------------------------------------------
+# mav_flight_review: MCAP + CSV telemetry backend (replaces the legacy
+# mav_flight_logger). The submodule's own examples and tests are disabled —
+# this repo ships its own under examples_cpp/.
+set(MAV_FLIGHT_REVIEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(MAV_FLIGHT_REVIEW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(MAV_FLIGHT_REVIEW_BUILD_PYBIND   ${BUILD_PYBIND} CACHE BOOL "" FORCE)
+add_subdirectory(thirdparty/mav_flight_review)
+
+# Expose mav_flight_review's Python package under PYBIND_PY_MIRROR_ROOT so
+# `import mav_flight_review` works with a single PYTHONPATH entry. Matches
+# the symlink pattern used by mpc / mav_simulator.
+if(BUILD_PYBIND)
   file(MAKE_DIRECTORY "${PYBIND_PY_MIRROR_ROOT}")
-  foreach(_pair
-      "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/mav_flight_mcap/pybind/python/mav_flight_mcap|mav_flight_mcap"
-      "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/mav_flight_mcap/viewer/src/mav_flight_viewer|mav_flight_viewer")
-    string(REPLACE "|" ";" _parts "${_pair}")
-    list(GET _parts 0 _src)
-    list(GET _parts 1 _name)
-    set(_dst "${PYBIND_PY_MIRROR_ROOT}/${_name}")
-    if(EXISTS "${_dst}" OR IS_SYMLINK "${_dst}")
-      file(REMOVE_RECURSE "${_dst}")
-    endif()
-    execute_process(
-      COMMAND ${CMAKE_COMMAND} -E create_symlink "${_src}" "${_dst}"
-      RESULT_VARIABLE _symlink_rc
-    )
-    if(NOT _symlink_rc EQUAL 0)
-      message(WARNING "mav_flight_mcap: failed to symlink ${_src} -> ${_dst}")
-    else()
-      message(STATUS "mav_flight_mcap: mirrored -> ${_dst}")
-    endif()
-  endforeach()
+  set(_mfr_src "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/mav_flight_review/pybind/python/mav_flight_review")
+  set(_mfr_dst "${PYBIND_PY_MIRROR_ROOT}/mav_flight_review")
+  if(EXISTS "${_mfr_dst}" OR IS_SYMLINK "${_mfr_dst}")
+    file(REMOVE_RECURSE "${_mfr_dst}")
+  endif()
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E create_symlink "${_mfr_src}" "${_mfr_dst}"
+    RESULT_VARIABLE _symlink_rc
+  )
+  if(NOT _symlink_rc EQUAL 0)
+    message(WARNING "mav_flight_review: failed to symlink ${_mfr_src} -> ${_mfr_dst}")
+  else()
+    message(STATUS "mav_flight_review: mirrored -> ${_mfr_dst}")
+  endif()
 endif()
 
+# Quadrotor simulator (mav_model + mav_controllers + mav_sensors composition).
 add_subdirectory(thirdparty/mav_simulator)
 
-# Dynamic trajectory generator (submodule). Save/restore BUILD_TESTING so the
-# submodule's CMake does not try to pull in test-only dependencies.
-set(MPC_EXAMPLES_BUILD_TESTING_SAVED ${BUILD_TESTING})
+# Trajectory generators. Save/restore BUILD_TESTING for submodules that pull
+# in test-only dependencies through their own CMakeLists.
+set(_mpc_examples_build_testing_saved ${BUILD_TESTING})
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(thirdparty/dynamic_trajectory_generator)
-set(BUILD_TESTING ${MPC_EXAMPLES_BUILD_TESTING_SAVED} CACHE BOOL "" FORCE)
+set(BUILD_TESTING ${_mpc_examples_build_testing_saved} CACHE BOOL "" FORCE)
 
-# Jerk-limited trajectory generator (pybind11 + pure-C++ library).
 add_subdirectory(thirdparty/trajectory_generator_jerk_limited)
-
-# GCOPTER trajectory optimizer (pybind11 + pure-C++ library).
 add_subdirectory(thirdparty/gcopter_lib)
+add_subdirectory(thirdparty/mav_trajectory_generation_lib)
 
-# MPC (pure-Python core + controllers mirrored into PYBIND_PY_MIRROR_ROOT).
+# MPC controllers (acados-generated code, position + trajectory variants).
 add_subdirectory(thirdparty/mpc)
 
 # ---------------------------------------------------------------------------
 # Project targets
 # ---------------------------------------------------------------------------
-find_package(yaml-cpp REQUIRED)
-
 # Generated acados MPC targets (autogenerated code isolated under libs/).
 add_subdirectory(libs)
 
@@ -124,20 +116,19 @@ add_subdirectory(examples_cpp)
 
 # Python half of the showcase: pure-Python mirrors + runs + tests. The
 # subdirectory only manipulates the PYBIND_PY_MIRROR_ROOT symlink and
-# registers the pytest suite; the actual bindings are produced by the
-# thirdparty submodules above.
+# registers the pytest suite; the actual bindings come from the thirdparty
+# submodules above.
 if(EXISTS "${CMAKE_SOURCE_DIR}/examples_py/CMakeLists.txt")
   add_subdirectory(examples_py)
 endif()
 
 # ---------------------------------------------------------------------------
-# Testing
+# Pytest suites (one per thirdparty submodule that ships Python tests)
 # ---------------------------------------------------------------------------
-# CTest is already included at the top of this file. This section registers
-# every thirdparty pytest suite so `ctest` from the repo root covers
-# both C++ (gtest) and Python (pytest) tests in a single invocation. Each
-# suite imports its bindings from ${PYBIND_PY_MIRROR_ROOT} (i.e. build/python),
-# so no `pip install` is needed — only a successful `cmake --build` beforehand.
+# Specific to this umbrella: register every thirdparty pytest tree so a single
+# `ctest` invocation covers both C++ (gtest) and Python (pytest). Each suite
+# imports its bindings from ${PYBIND_PY_MIRROR_ROOT}, so no `pip install` is
+# needed — only a successful `cmake --build` beforehand.
 if(BUILD_TESTING)
   find_program(PYTEST_EXECUTABLE NAMES pytest pytest-3 py.test-3)
   if(NOT PYTEST_EXECUTABLE)
@@ -191,18 +182,11 @@ if(BUILD_TESTING)
     register_pytest_suite(pytest_mav_sensors
       "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_sensors/pybind/tests")
 
-    # mav_flight_logger (self-contained Python logger / metrics / plotter)
-    # TODO: remove once MCAP pipeline validated.
-    register_pytest_suite(pytest_mav_flight_logger
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_flight_logger/tests")
+    # MCAP / CSV telemetry backend
+    register_pytest_suite(pytest_mav_flight_review
+      "${CMAKE_SOURCE_DIR}/thirdparty/mav_flight_review/pybind/tests")
 
-    # mav_flight_mcap bindings + viewer (replacement for mav_flight_logger).
-    register_pytest_suite(pytest_mav_flight_mcap
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_flight_mcap/pybind/tests")
-    register_pytest_suite(pytest_mav_flight_viewer
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_flight_mcap/viewer/tests")
-
-    # examples_py — Python half of the showcase, tests per adapter.
+    # examples_py — Python half of the showcase, tests per adapter and framework.
     if(EXISTS "${CMAKE_SOURCE_DIR}/examples_py/tests")
       register_pytest_suite(pytest_examples_py
         "${CMAKE_SOURCE_DIR}/examples_py/tests")
@@ -220,6 +204,8 @@ if(BUILD_TESTING)
       "${CMAKE_SOURCE_DIR}/thirdparty/gcopter_lib/pybind/tests")
     register_pytest_suite(pytest_dynamic_trajectory_generator
       "${CMAKE_SOURCE_DIR}/thirdparty/dynamic_trajectory_generator/pybind/tests")
+    register_pytest_suite(pytest_mav_trajectory_generation_lib
+      "${CMAKE_SOURCE_DIR}/thirdparty/mav_trajectory_generation_lib/pybind/tests")
   else()
     message(WARNING
       "pytest not found — Python test suites will NOT be registered in ctest. "

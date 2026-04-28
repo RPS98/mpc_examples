@@ -35,16 +35,15 @@ namespace mpc_examples::adapters {
 class WaypointReferenceGenerator : public framework::ITrajectoryGenerator {
 public:
   struct Config {
-    double d_max           = 2.0;   //!< Max reference distance from current position [m].
-    double reach_threshold = 0.1;   //!< Minimum planar distance for yaw alignment [m].
+    double d_max           = 2.0;  //!< Max reference distance from current position [m].
+    double reach_threshold = 0.1;  //!< Minimum planar distance for yaw alignment [m].
   };
 
   explicit WaypointReferenceGenerator(const Config& cfg);
 
   static Config loadConfigFromYaml(const std::string& path);
 
-  void initialize(const mav_model::State& initial_state,
-                  const ExampleConfig& example_cfg) override;
+  void initialize(const mav_model::State& initial_state, const ExampleConfig& example_cfg) override;
 
   void onWaypointChanged(const Eigen::Vector3d& next_waypoint,
                          const mav_model::State& state,

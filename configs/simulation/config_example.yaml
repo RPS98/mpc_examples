@@ -1,21 +1,22 @@
 sim_config:
   # --- Simulation timing ------------------------------------------------------
-  sim_time: 36.0              # Total simulation time (s)
+  sim_time: 30.0              # Total simulation time (s)
   model_dt: 0.001             # Physics model timestep - 1000 Hz
   controller_dt: 0.002        # INDI + IMU update timestep - 500 Hz
   mpc_dt: 0.01                # MPC control timestep - 100 Hz
   pid_dt: 0.01                # PID control timestep - 100 Hz
 
   # --- Mission parameters -----------------------------------------------------
-  max_speed: 3.0              # m/s, used by generators and scheduler
-  hover_time: 5.0             # Seconds to hover after the last waypoint
+  max_speed: 2.0              # m/s, used by generators and scheduler
+  hover_time: 10.0             # Seconds to hover after the last waypoint
   settle_margin_s: 2.0        # Extra time added to every waypoint hop (stabilisation)
   path_facing: true
 
   # --- Logging / runtime ------------------------------------------------------
+  output_format: mcap         # Output format: "mcap" (default) or "csv"
   benchmark: false            # When true, disables CSV logging for pure timing runs.
   silent: true                # When true, suppresses progress bar output.
-  parallel: true              # When true, the entry-point launches one worker
+  parallel: false             # When true, the entry-point launches one worker
                               # (std::thread in C++, subprocess in Python) per
                               # enabled case. CLI flag --parallel forces true.
                               # Note: combine with controller_delay_mode: fixed
@@ -39,15 +40,15 @@ sim_config:
   waypoints:
     - [00.0, 00.0, 10.0]
     - [10.0, 00.0, 10.0]
-    - [10.0, 10.0, 20.0]
-    - [00.0, 10.0, 20.0]
-    - [00.0, 00.0, 10.0]
+    # - [10.0, 10.0, 20.0]
+    # - [00.0, 10.0, 20.0]
+    # - [00.0, 00.0, 10.0]
 
   # --- Batch of controller × generator cases ----------------------------------
   # A single list of runs consumed by two executables:
   #   - position_examples     picks entries whose generator is `waypoints`.
-  #   - trajectory_examples   picks entries whose generator is `gcopter` or
-  #                           `jerk_limited`.
+  #   - trajectory_examples   picks entries whose generator is `gcopter`,
+  #                           `jerk_limited`, `dynamic` or `mav_traj_gen`.
   # Any enabled entry outside a binary's scope is skipped with a log-info.
   # `generator_config` overrides the default YAML path for that generator;
   # it lets the two `waypoints` cases share the same adapter while using
@@ -58,7 +59,23 @@ sim_config:
     - { controller: mpc_position,   generator: waypoints,    enabled: true,
         generator_config: configs/generators/config_waypoints_mpc.yaml }
     # --- consumed by trajectory_examples ---
-    - { controller: pid,            generator: gcopter,      enabled: true }
-    - { controller: pid,            generator: jerk_limited, enabled: true }
+    # All pid + trajectory cases use PidTrajectoryGeometricController
+    # (parallel pos+vel feedback → acc, via TrajectoryController) and
+    # config_pid_trajectory.yaml.
+    - { controller: pid,            generator: gcopter,      enabled: true,
+        controller_config: configs/controllers/config_pid_trajectory.yaml }
+    - { controller: pid,            generator: jerk_limited, enabled: true,
+        controller_config: configs/controllers/config_pid_trajectory.yaml }
+    - { controller: pid,            generator: dynamic,      enabled: true,
+        controller_config: configs/controllers/config_pid_trajectory.yaml }
+    - { controller: pid,            generator: mav_traj_gen, enabled: true,
+        controller_config: configs/controllers/config_pid_trajectory.yaml }
     - { controller: mpc_trajectory, generator: gcopter,      enabled: true }
     - { controller: mpc_trajectory, generator: jerk_limited, enabled: true }
+    # mpc_trajectory + dynamic prints FAILED in the run summary because the
+    # dynamic generator emits acceleration references that drive the acados
+    # QP into ACADOS_MINSTEP (status 4) under the default p2p config. The
+    # entry is kept enabled so the failure is visible in run_all and the
+    # single script remains operational for opt-in experiments.
+    - { controller: mpc_trajectory, generator: dynamic,      enabled: true }
+    - { controller: mpc_trajectory, generator: mav_traj_gen, enabled: true }

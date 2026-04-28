@@ -49,8 +49,7 @@ public:
    */
   static Config loadConfigFromYaml(const std::string& path);
 
-  void initialize(const mav_model::State& initial_state,
-                  const ExampleConfig& example_cfg) override;
+  void initialize(const mav_model::State& initial_state, const ExampleConfig& example_cfg) override;
 
   int referenceHorizonSize() const override { return horizon_steps_ + 1; }
   double referenceHorizonDt() const override { return dt_horizon_; }

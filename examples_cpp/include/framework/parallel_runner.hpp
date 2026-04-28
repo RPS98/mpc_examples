@@ -93,7 +93,7 @@ inline void warnIfOvercommit(std::size_t n_runs) {
  */
 inline void warnIfMeasuredDelay(const ExampleConfig& cfg) {
   if (cfg.controller_delay_mode == DelayMode::kMeasured ||
-      cfg.generator_delay_mode  == DelayMode::kMeasured) {
+      cfg.generator_delay_mode == DelayMode::kMeasured) {
     std::cerr << "[warning] parallel mode + 'measured' delay → CPU contention "
                  "contaminates *_compute_time_us logged in CSVs. Use "
                  "controller_delay_mode/generator_delay_mode: fixed for "

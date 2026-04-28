@@ -42,8 +42,8 @@ namespace mpc_examples::adapters {
 class MpcPositionController : public framework::IController {
 public:
   struct Config {
-    std::string mpc_yaml_path;            //!< Path to the acados MPC YAML definition.
-    double soft_speed_margin = 1.0;       //!< Fraction of max_speed used as soft speed bound.
+    std::string mpc_yaml_path;       //!< Path to the acados MPC YAML definition.
+    double soft_speed_margin = 1.0;  //!< Fraction of max_speed used as soft speed bound.
   };
 
   explicit MpcPositionController(const Config& cfg);
@@ -62,8 +62,7 @@ public:
    */
   static Config loadConfigFromYaml(const std::string& path);
 
-  void initialize(const mav_model::State& initial_state,
-                  const ExampleConfig& example_cfg) override;
+  void initialize(const mav_model::State& initial_state, const ExampleConfig& example_cfg) override;
 
   int referenceHorizonSize() const override { return 1; }
   double referenceHorizonDt() const override { return control_period_; }

@@ -10,15 +10,15 @@
 #include "test_helpers.hpp"
 
 using mpc_examples::adapters::MpcTrajectoryController;
-using mpc_examples::testing::hoverStateAt;
 using mpc_examples::testing::horizonAtPosition;
+using mpc_examples::testing::hoverStateAt;
 using mpc_examples::testing::loadTestSimConfig;
 using mpc_examples::testing::repoPath;
 
 class MpcTrajectoryControllerTest : public ::testing::Test {
 protected:
   mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
-  mav_model::State            state_   = hoverStateAt({0.0, 0.0, 10.0});
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
   std::unique_ptr<MpcTrajectoryController> ctrl_;
 
   void SetUp() override {

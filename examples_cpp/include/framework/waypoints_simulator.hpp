@@ -45,18 +45,18 @@ namespace mpc_examples::framework {
  * step.
  */
 struct BenchmarkStats {
-  double simulated_time_s       = 0.0;
-  double real_time_s            = 0.0;
-  double sim_speedup            = 0.0;
-  double controller_mean_us     = 0.0;
+  double simulated_time_s         = 0.0;
+  double real_time_s              = 0.0;
+  double sim_speedup              = 0.0;
+  double controller_mean_us       = 0.0;
   double generator_update_mean_us = 0.0;
   double generator_eval_mean_us   = 0.0;
-  double indi_mean_us           = 0.0;
-  double imu_mean_us            = 0.0;
-  double model_mean_us          = 0.0;
-  double tracking_rmse_m        = 0.0;
-  std::size_t controller_steps  = 0;
-  std::size_t indi_steps        = 0;
+  double indi_mean_us             = 0.0;
+  double imu_mean_us              = 0.0;
+  double model_mean_us            = 0.0;
+  double tracking_rmse_m          = 0.0;
+  std::size_t controller_steps    = 0;
+  std::size_t indi_steps          = 0;
 };
 
 /**

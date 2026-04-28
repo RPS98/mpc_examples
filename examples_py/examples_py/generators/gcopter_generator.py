@@ -26,6 +26,7 @@ from typing import Optional
 
 import numpy as np
 import yaml
+from gcopterpy import GeneratorConfig
 from gcopterpy.trajectory import (
     DroneLimits,
     DroneParameters,
@@ -217,7 +218,15 @@ class GcopterGenerator(ITrajectoryGenerator):
         oc.smoothing_eps = src.smoothing_eps
         oc.integral_resolution = src.integral_resolution
         oc.rel_cost_tol = src.rel_cost_tol
+        oc.corridor_margin = self._cfg.corridor_margin
         return oc
+
+    def _build_native_generator_config(self) -> GeneratorConfig:
+        cfg = GeneratorConfig()
+        cfg.params = self._build_native_drone_params()
+        cfg.limits = self._build_native_drone_limits()
+        cfg.optimization = self._build_native_optimization()
+        return cfg
 
     def initialize(self, initial_state: State, example_cfg: ExampleConfig) -> None:
         if example_cfg.max_speed <= 0.0:
@@ -239,11 +248,7 @@ class GcopterGenerator(ITrajectoryGenerator):
         self._has_plan = False
 
         # Construct the solver once; reused across segments via generate().
-        self._ctrl = TrajectoryGenerator(
-            self._build_native_drone_params(),
-            self._build_native_drone_limits(),
-            self._build_native_optimization(),
-        )
+        self._ctrl = TrajectoryGenerator(self._build_native_generator_config())
 
     def on_waypoint_changed(
         self, next_waypoint: np.ndarray, state: State, t_start: float,
@@ -262,13 +267,12 @@ class GcopterGenerator(ITrajectoryGenerator):
             self._duration = 0.0
             return
 
-        # Insert a midpoint to guarantee ≥ 2 MINCO segments. With a single
-        # segment, the L-BFGS back-end is prone to "negative line-search step"
-        # failures.
-        midpoint = 0.5 * (p0 + self._target_wp)
-        wps = [Waypoint(p0), Waypoint(midpoint), Waypoint(self._target_wp)]
-
-        ok = self._ctrl.generate(wps, self._cfg.corridor_margin)
+        # Two-waypoint hop. MINCO + L-BFGS converges fine for any non-degenerate
+        # segment; the pure-vertical degeneracy is handled inside gcopter_lib
+        # via OptimizationConfig::vertical_perturbation, so the adapter just
+        # hands (start, end) to the solver and trusts it to converge.
+        wps = [Waypoint(p0), Waypoint(self._target_wp)]
+        ok = self._ctrl.generate(wps, self._cfg.drone_limits.max_velocity)
         if not ok:
             # Fall back to a static setpoint at next_waypoint.
             self._has_plan = False

@@ -1,2 +1,0 @@
-add_executable(basic_cpp_logging basic_cpp_logging.cpp)
-target_link_libraries(basic_cpp_logging PRIVATE mav_flight_mcap::mav_flight_mcap)

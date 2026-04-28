@@ -94,7 +94,10 @@ def _run_case(spec, example_cfg, simulator_params,
     if print_banner:
         print_case_banner(index, total, spec.controller, spec.generator, run_id)
     try:
-        controller = make_controller(spec.controller, spec.controller_config)
+        # Determine scope: trajectory if generator is one of the trajectory types
+        trajectory_generators = {'gcopter', 'jerk_limited', 'dynamic', 'mav_traj_gen'}
+        is_trajectory_scope = spec.generator in trajectory_generators
+        controller = make_controller(spec.controller, spec.controller_config, is_trajectory_scope)
         generator = make_generator(spec.generator, spec.generator_config)
 
         metadata = RunMetadata(
@@ -325,4 +328,8 @@ def run_with_filter(
     print(f'Done · run_id={run_id} · output_dir={out_root}'
           f' · wall={t_wall_total:.2f}s')
 
-    return 0 if all(r is not None and r.succeeded for r in results) else 2
+    # Mirror the C++ runner: per-case failures are reported in the printed
+    # summary table; the entry-point itself exits 0 so wrapper scripts can
+    # post-process the partial results (metrics, plots) without aborting on
+    # ``set -euo pipefail``.
+    return 0

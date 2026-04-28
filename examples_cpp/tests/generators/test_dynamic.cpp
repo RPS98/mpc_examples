@@ -22,7 +22,7 @@ using mpc_examples::testing::repoPath;
 class DynamicTrajectoryGeneratorTest : public ::testing::Test {
 protected:
   mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
-  mav_model::State            state_   = hoverStateAt({0.0, 0.0, 10.0});
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
   std::unique_ptr<DynamicTrajectoryGenerator> gen_;
 
   void SetUp() override {
@@ -47,6 +47,6 @@ TEST_F(DynamicTrajectoryGeneratorTest, ProducesFiniteReferencesOver50Steps) {
 
 TEST_F(DynamicTrajectoryGeneratorTest, AdvertisesPositionField) {
   const auto mask = gen_->providedReferenceFields();
-  EXPECT_TRUE(mpc_examples::framework::hasField(
-      mask, mpc_examples::framework::ReferenceField::kPosition));
+  EXPECT_TRUE(
+      mpc_examples::framework::hasField(mask, mpc_examples::framework::ReferenceField::kPosition));
 }

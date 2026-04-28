@@ -1,0 +1,33 @@
+# Configuration for the mav_trajectory_generation_lib adapter (key: mav_traj_gen).
+#
+# Wraps a polynomial trajectory optimiser (degree 10, ETH-ASL upstream behind a
+# ROS-free facade). The generator is reusable: every waypoint transition runs
+# generate() afresh on a three-waypoint sequence [current_pos, midpoint, next].
+#
+# `max_speed` is NOT specified here — it comes from
+# `sim_config.max_speed` in configs/simulation/config_example.yaml so all
+# generators share a single source of truth.
+
+optimization:
+  # Derivative order to minimise along the trajectory.
+  # 0 = position, 1 = velocity, 2 = acceleration, 3 = jerk, 4 = snap.
+  derivative_to_optimize: 4
+
+  # Solver backend: "linear" (closed-form least squares; ignores velocity /
+  # acceleration bounds) or "nonlinear" (NLopt-backed; enforces magnitude
+  # bounds but slower and may fail to converge on degenerate layouts).
+  solver: linear
+
+  # Maximum acceleration magnitude [m/s^2]. Drives segment-time allocation
+  # under "linear" and acts as the active acceleration upper bound under
+  # "nonlinear".
+  a_max: 4.0
+
+  # NLopt knobs (only used when solver == "nonlinear"). Defaults below match
+  # the library's tuning for MAV trajectories.
+  nl_max_iterations: 2000
+  nl_f_rel: 0.05
+  nl_x_rel: 0.1
+  nl_time_penalty: 1000.0
+  nl_initial_stepsize_rel: 0.1
+  nl_inequality_constraint_tolerance: 0.2

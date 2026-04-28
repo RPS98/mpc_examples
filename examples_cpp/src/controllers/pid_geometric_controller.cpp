@@ -71,13 +71,16 @@ PidGeometricController::PidGeometricController(const Config& cfg) : cfg_(cfg) {
   }
 }
 
-PidGeometricController::Config PidGeometricController::loadConfigFromYaml(
-    const std::string& path) {
+PidGeometricController::Config PidGeometricController::loadConfigFromYaml(const std::string& path) {
   const YAML::Node root = detail::loadYamlRoot(path);
   Config cfg;
 
   if (root["v_max"]) {
     cfg.v_max = detail::readDoubleRequired(root["v_max"], "v_max");
+  }
+  if (root["feedforward_velocity"]) {
+    cfg.feedforward_velocity =
+        detail::readBoolRequired(root["feedforward_velocity"], "feedforward_velocity");
   }
 
   const YAML::Node ctrl = root["controller"];
@@ -140,28 +143,30 @@ framework::ControlCommand PidGeometricController::computeCommand(
   }
   const framework::ReferenceSample& ref = references.front();
 
-  const Eigen::Vector3d position      = state.getPositionVector();
-  const Eigen::Vector3d velocity      = state.getLinearVelocityVector();
+  const Eigen::Vector3d position       = state.getPositionVector();
+  const Eigen::Vector3d velocity       = state.getLinearVelocityVector();
   const Eigen::Quaterniond orientation = state.getOrientationVector();
 
   const auto t0 = std::chrono::high_resolution_clock::now();
 
   Eigen::Vector3d vel_des =
       pos_ctrl_->positionToLinearVelocity(position, ref.position, control_period_);
+  if (cfg_.feedforward_velocity) {
+    vel_des += ref.velocity;
+  }
   vel_des = saturateVelocity(vel_des, cfg_.v_max);
 
   const Eigen::Vector3d acc_des =
       vel_ctrl_->linearVelocityToLinearAcceleration(velocity, vel_des, control_period_);
 
-  const auto [thrust, rates] =
-      geo_ctrl_->accelerationToRates(acc_des, ref.yaw, orientation);
+  const auto [thrust, rates] = geo_ctrl_->accelerationToRates(acc_des, ref.yaw, orientation);
 
-  const auto t1 = std::chrono::high_resolution_clock::now();
+  const auto t1  = std::chrono::high_resolution_clock::now();
   last_solve_us_ = std::chrono::duration<double>(t1 - t0).count() * 1e6;
 
   framework::ControlCommand cmd;
-  cmd.thrust_n      = thrust;
-  cmd.angular_rate  = rates;
+  cmd.thrust_n     = thrust;
+  cmd.angular_rate = rates;
   return cmd;
 }
 

@@ -26,7 +26,7 @@ void WaypointScheduler::initialize(const std::vector<Eigen::Vector3d>& waypoints
     throw std::invalid_argument("WaypointScheduler: settle_margin_s must be >= 0.");
   }
 
-  waypoints_   = waypoints;
+  waypoints_    = waypoints;
   active_index_ = 0;
   switch_times_.clear();
   switch_times_.reserve(waypoints.size());
@@ -53,15 +53,13 @@ WaypointScheduler::TickResult WaypointScheduler::tick(const double t) {
   // Advance the active index while the switch time of the next waypoint has
   // already elapsed. This is monotonic (time cannot go backwards under normal
   // usage).
-  while (active_index_ + 1 < waypoints_.size() &&
-         t + 1e-12 >= switch_times_[active_index_]) {
+  while (active_index_ + 1 < waypoints_.size() && t + 1e-12 >= switch_times_[active_index_]) {
     ++active_index_;
   }
 
   result.active_index     = static_cast<int>(active_index_);
   result.waypoint_changed = (active_index_ != previous_index);
-  result.finished = (active_index_ + 1 == waypoints_.size()) &&
-                    (t + 1e-12 >= switch_times_.back());
+  result.finished = (active_index_ + 1 == waypoints_.size()) && (t + 1e-12 >= switch_times_.back());
   return result;
 }
 

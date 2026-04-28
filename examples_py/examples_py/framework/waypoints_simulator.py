@@ -388,8 +388,12 @@ class WaypointsSimulator:
                         linear_velocity=s_vel,
                         angular_velocity=s_omega,
                         reference_position=np.asarray(
+                            scheduler.waypoint(active_index), dtype=float),
+                        trajectory_position=np.asarray(
                             current_ref.position, dtype=float),
-                        reference_orientation=_euler_to_quaternion(
+                        trajectory_velocity=np.asarray(
+                            current_ref.velocity, dtype=float),
+                        trajectory_orientation=_euler_to_quaternion(
                             0.0, 0.0, float(current_ref.yaw)),
                         thrust_n=float(current_cmd.thrust_n),
                         command_angular_velocity=np.asarray(

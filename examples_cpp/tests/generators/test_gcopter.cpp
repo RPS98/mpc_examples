@@ -17,12 +17,12 @@ using mpc_examples::testing::repoPath;
 class GcopterGeneratorTest : public ::testing::Test {
 protected:
   mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
-  mav_model::State            state_   = hoverStateAt({0.0, 0.0, 10.0});
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
   std::unique_ptr<GcopterGenerator> gen_;
 
   void SetUp() override {
-    auto cfg = GcopterGenerator::loadConfigFromYaml(
-        repoPath("configs/generators/config_gcopter.yaml"));
+    auto cfg =
+        GcopterGenerator::loadConfigFromYaml(repoPath("configs/generators/config_gcopter.yaml"));
     gen_ = std::make_unique<GcopterGenerator>(cfg);
     gen_->initialize(state_, sim_cfg_);
   }
@@ -43,8 +43,8 @@ TEST_F(GcopterGeneratorTest, ProducesFiniteReferencesOver50Steps) {
 
 TEST_F(GcopterGeneratorTest, AdvertisesTrajectoryFields) {
   const auto mask = gen_->providedReferenceFields();
-  using mpc_examples::framework::ReferenceField;
   using mpc_examples::framework::hasField;
+  using mpc_examples::framework::ReferenceField;
   EXPECT_TRUE(hasField(mask, ReferenceField::kPosition));
   EXPECT_TRUE(hasField(mask, ReferenceField::kVelocity));
 }

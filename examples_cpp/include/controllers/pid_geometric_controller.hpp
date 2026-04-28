@@ -35,12 +35,14 @@ namespace mpc_examples::adapters {
  *
  * Pipeline, executed once per control period:
  *   1. position PID:   (state.position, ref.position)        → vel_des
- *   2. saturate to v_max (preserves direction)
- *   3. velocity PID:   (state.velocity, vel_des)             → acc_des
- *   4. geometric:      (acc_des, ref.yaw, state.orientation) → (thrust, rates)
+ *   2. (optional) add ref.velocity feedforward when @c Config::feedforward_velocity
+ *   3. saturate to v_max (preserves direction)
+ *   4. velocity PID:   (state.velocity, vel_des)             → acc_des
+ *   5. geometric:      (acc_des, ref.yaw, state.orientation) → (thrust, rates)
  *
- * Requires ReferenceField::kPosition only. Velocity/acceleration samples from
- * the generator are ignored; the cascade computes them from the position error.
+ * Requires ReferenceField::kPosition; ReferenceField::kVelocity is added when
+ * @c feedforward_velocity is enabled so WaypointsSimulator emits a clear
+ * compatibility warning if the active generator does not provide it.
  */
 class PidGeometricController : public framework::IController {
 public:
@@ -50,6 +52,11 @@ public:
     geometric_controller::AttitudeGeometricControllerParameters<double> attitude_params;
     geometric_controller::RatesGeometricControllerParameters<double> rates_params;
     double v_max = 1.0;  //!< Saturation applied to the position-PID velocity output [m/s].
+    /// When true, sum the reference linear velocity into the velocity setpoint
+    /// fed to the velocity PID. Recommended when the upstream generator emits
+    /// a smooth trajectory (jerk_limited, gcopter, dynamic, mav_traj_gen).
+    /// Disabled by default to preserve the legacy waypoint-tracking behaviour.
+    bool feedforward_velocity = false;
   };
 
   explicit PidGeometricController(const Config& cfg);
@@ -69,8 +76,7 @@ public:
    */
   static Config loadConfigFromYaml(const std::string& path);
 
-  void initialize(const mav_model::State& initial_state,
-                  const ExampleConfig& example_cfg) override;
+  void initialize(const mav_model::State& initial_state, const ExampleConfig& example_cfg) override;
 
   int referenceHorizonSize() const override { return 1; }
   double referenceHorizonDt() const override { return control_period_; }
@@ -81,6 +87,10 @@ public:
       const std::vector<framework::ReferenceSample>& references) override;
 
   framework::ReferenceFieldMask requiredReferenceFields() const override {
+    if (cfg_.feedforward_velocity) {
+      return framework::makeMask(
+          {framework::ReferenceField::kPosition, framework::ReferenceField::kVelocity});
+    }
     return framework::makeMask({framework::ReferenceField::kPosition});
   }
 

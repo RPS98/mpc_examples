@@ -97,8 +97,8 @@ struct ReferenceSample {
  * RATES mode.
  */
 struct ControlCommand {
-  double thrust_n              = 0.0;                        //!< Collective thrust [N]
-  Eigen::Vector3d angular_rate = Eigen::Vector3d::Zero();    //!< Body rates [rad/s]
+  double thrust_n              = 0.0;                      //!< Collective thrust [N]
+  Eigen::Vector3d angular_rate = Eigen::Vector3d::Zero();  //!< Body rates [rad/s]
 };
 
 }  // namespace mpc_examples::framework

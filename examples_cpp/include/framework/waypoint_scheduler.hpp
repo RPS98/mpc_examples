@@ -76,9 +76,7 @@ public:
   double switchTime(std::size_t i) const { return switch_times_[i]; }
 
   /** @return Simulator time at which the last waypoint becomes active [s]. */
-  double finalTime() const {
-    return switch_times_.empty() ? 0.0 : switch_times_.back();
-  }
+  double finalTime() const { return switch_times_.empty() ? 0.0 : switch_times_.back(); }
 
   /** @return Index of the currently active waypoint. */
   int activeIndex() const { return static_cast<int>(active_index_); }
@@ -94,7 +92,7 @@ public:
 
 private:
   std::vector<Eigen::Vector3d> waypoints_;
-  std::vector<double> switch_times_;   //!< Simulator time at which each waypoint activates.
+  std::vector<double> switch_times_;  //!< Simulator time at which each waypoint activates.
   std::size_t active_index_ = 0;
 };
 

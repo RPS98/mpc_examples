@@ -17,7 +17,7 @@
 #include <stdexcept>
 
 #include "controllers/mpc_position_controller.hpp"
-#include "controllers/pid_geometric_controller.hpp"
+#include "controllers/pid_position_geometric_controller.hpp"
 #include "generators/dynamic_trajectory_generator.hpp"
 #include "generators/gcopter_generator.hpp"
 #include "generators/jerk_limited_generator.hpp"
@@ -26,42 +26,39 @@
 namespace mpc_examples::framework {
 
 std::string defaultControllerConfigPath(const std::string& name) {
-  if (name == ControllerKeys::kPid)         return "configs/controllers/config_pid.yaml";
+  if (name == ControllerKeys::kPid) return "configs/controllers/config_pid.yaml";
   if (name == ControllerKeys::kMpcPosition) return "configs/controllers/config_mpc.yaml";
-  throw std::invalid_argument(
-      "factories_position: unsupported controller '" + name +
-      "' (position_examples only links pid and mpc_position).");
+  throw std::invalid_argument("factories_position: unsupported controller '" + name +
+                              "' (position_examples only links pid and mpc_position).");
 }
 
 std::string defaultGeneratorConfigPath(const std::string& name) {
-  if (name == GeneratorKeys::kWaypoints)   return "configs/generators/config_waypoints.yaml";
+  if (name == GeneratorKeys::kWaypoints) return "configs/generators/config_waypoints.yaml";
   if (name == GeneratorKeys::kJerkLimited) return "configs/generators/config_jerk_limited.yaml";
-  if (name == GeneratorKeys::kGcopter)     return "configs/generators/config_gcopter.yaml";
-  if (name == GeneratorKeys::kDynamic)     return "configs/generators/config_dynamic.yaml";
+  if (name == GeneratorKeys::kGcopter) return "configs/generators/config_gcopter.yaml";
+  if (name == GeneratorKeys::kDynamic) return "configs/generators/config_dynamic.yaml";
   throw std::invalid_argument("Unknown generator name: '" + name + "'.");
 }
 
 std::unique_ptr<IController> makeController(const std::string& name,
-                                            const std::string& config_path) {
-  const std::string path =
-      config_path.empty() ? defaultControllerConfigPath(name) : config_path;
+                                            const std::string& config_path,
+                                            bool /*is_trajectory_scope*/) {
+  const std::string path = config_path.empty() ? defaultControllerConfigPath(name) : config_path;
 
   if (name == ControllerKeys::kPid) {
-    auto cfg = adapters::PidGeometricController::loadConfigFromYaml(path);
-    return std::make_unique<adapters::PidGeometricController>(cfg);
+    auto cfg = adapters::PidPositionGeometricController::loadConfigFromYaml(path);
+    return std::make_unique<adapters::PidPositionGeometricController>(cfg);
   }
   if (name == ControllerKeys::kMpcPosition) {
     auto cfg = adapters::MpcPositionController::loadConfigFromYaml(path);
     return std::make_unique<adapters::MpcPositionController>(cfg);
   }
-  throw std::invalid_argument(
-      "factories_position: unsupported controller '" + name + "'.");
+  throw std::invalid_argument("factories_position: unsupported controller '" + name + "'.");
 }
 
 std::unique_ptr<ITrajectoryGenerator> makeGenerator(const std::string& name,
                                                     const std::string& config_path) {
-  const std::string path =
-      config_path.empty() ? defaultGeneratorConfigPath(name) : config_path;
+  const std::string path = config_path.empty() ? defaultGeneratorConfigPath(name) : config_path;
 
   if (name == GeneratorKeys::kWaypoints) {
     auto cfg = adapters::WaypointReferenceGenerator::loadConfigFromYaml(path);

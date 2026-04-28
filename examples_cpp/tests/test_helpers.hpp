@@ -15,7 +15,7 @@
 namespace mpc_examples::testing {
 
 #ifndef MPC_EXAMPLES_REPO_ROOT
-#error "MPC_EXAMPLES_REPO_ROOT must be injected via target_compile_definitions."
+#  error "MPC_EXAMPLES_REPO_ROOT must be injected via target_compile_definitions."
 #endif
 
 /// Absolute path to a repo-relative file (configs/..., libs/..., etc.).
@@ -41,20 +41,20 @@ inline mav_model::State hoverStateAt(const Eigen::Vector3d& position) {
  * that do not influence the semantic correctness of the adapter under test.
  */
 inline ExampleConfig loadTestSimConfig() {
-  ExampleConfig cfg = loadExampleConfig(repoPath("configs/simulation/config_example.yaml"));
-  cfg.sim_time                     = 0.5;
-  cfg.silent                       = true;
-  cfg.benchmark                    = false;
-  cfg.controller_delay_mode        = DelayMode::kFixed;
-  cfg.controller_delay_fixed_s     = 0.0;
-  cfg.generator_delay_mode         = DelayMode::kFixed;
-  cfg.generator_delay_fixed_s      = 0.0;
+  ExampleConfig cfg         = loadExampleConfig(repoPath("configs/simulation/config_example.yaml"));
+  cfg.sim_time              = 0.5;
+  cfg.silent                = true;
+  cfg.benchmark             = false;
+  cfg.controller_delay_mode = DelayMode::kFixed;
+  cfg.controller_delay_fixed_s = 0.0;
+  cfg.generator_delay_mode     = DelayMode::kFixed;
+  cfg.generator_delay_fixed_s  = 0.0;
   return cfg;
 }
 
 /// Build a small reference vector covering a controller's horizon.
-inline std::vector<framework::ReferenceSample> horizonAtPosition(
-    const Eigen::Vector3d& target, int n_samples) {
+inline std::vector<framework::ReferenceSample> horizonAtPosition(const Eigen::Vector3d& target,
+                                                                 int n_samples) {
   framework::ReferenceSample s;
   s.position     = target;
   s.velocity     = Eigen::Vector3d::Zero();

@@ -42,8 +42,8 @@ bool isFiniteRefs(const dynamic_traj_generator::References& r) {
   return isFiniteVec3(r.position) && isFiniteVec3(r.velocity) && isFiniteVec3(r.acceleration);
 }
 
-dynamic_traj_generator::DynamicWaypoint::Vector makeSegmentWaypoints(
-    const Eigen::Vector3d& start, const Eigen::Vector3d& end) {
+dynamic_traj_generator::DynamicWaypoint::Vector makeSegmentWaypoints(const Eigen::Vector3d& start,
+                                                                     const Eigen::Vector3d& end) {
   dynamic_traj_generator::DynamicWaypoint::Vector result;
   result.reserve(2);
   dynamic_traj_generator::DynamicWaypoint a;
@@ -154,8 +154,8 @@ void DynamicTrajectoryGenerator::update(double t, const mav_model::State& state)
       last_sample_.acceleration = refs.acceleration;
     }
   } else if (has_plan_ && t > t_max_) {
-    segment_completed_        = true;
-    last_sample_.position     = target_wp_;
+    segment_completed_    = true;
+    last_sample_.position = target_wp_;
     last_sample_.velocity.setZero();
     last_sample_.acceleration.setZero();
   } else if (!has_plan_) {

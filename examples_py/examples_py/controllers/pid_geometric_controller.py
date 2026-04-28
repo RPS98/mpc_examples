@@ -58,6 +58,7 @@ class PidGeometricConfig:
     rates_params: RatesGeometricControllerParameters = field(
         default_factory=RatesGeometricControllerParameters)
     v_max: float = 1.0
+    feedforward_velocity: bool = False
 
 
 def _read_vec3(node, name: str) -> np.ndarray:
@@ -143,6 +144,8 @@ class PidGeometricController(IController):
         cfg = PidGeometricConfig()
         if 'v_max' in root:
             cfg.v_max = float(root['v_max'])
+        if 'feedforward_velocity' in root:
+            cfg.feedforward_velocity = bool(root['feedforward_velocity'])
 
         ctrl = root.get('controller')
         if not isinstance(ctrl, dict):
@@ -216,6 +219,8 @@ class PidGeometricController(IController):
         t0 = time.perf_counter()
         vel_des = self._pos_ctrl.position_to_linear_velocity(
             position, np.asarray(ref.position, dtype=float), self._control_period)
+        if self._cfg.feedforward_velocity:
+            vel_des = vel_des + np.asarray(ref.velocity, dtype=float)
         vel_des = _saturate_velocity(vel_des, self._cfg.v_max)
 
         acc_des = self._vel_ctrl.linear_velocity_to_linear_acceleration(
@@ -230,6 +235,8 @@ class PidGeometricController(IController):
                               angular_rate=np.asarray(rates, dtype=float))
 
     def required_reference_fields(self) -> ReferenceField:
+        if self._cfg.feedforward_velocity:
+            return make_mask([ReferenceField.POSITION, ReferenceField.VELOCITY])
         return make_mask([ReferenceField.POSITION])
 
     def name(self) -> str:

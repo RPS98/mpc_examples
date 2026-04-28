@@ -11,19 +11,9 @@
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "${SCRIPT_DIR}/_lib/env.sh"
-source "${SCRIPT_DIR}/_lib/newest_run.sh"
+source "${SCRIPT_DIR}/_lib/discover.sh"
 
-RUN_DIR=""
-if [[ $# -ge 1 && "${1:-}" != --* && "${1:-}" != -* ]]; then
-  RUN_DIR="$1"; shift
-fi
-if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(find_newest_run || true)"
-  if [[ -z "${RUN_DIR}" ]]; then
-    echo "[err] no run_dir given and no populated directory found under simulator_logs/." >&2
-    exit 1
-  fi
-  echo "[info] no run_dir given, using newest populated: ${RUN_DIR}"
-fi
+resolve_run_dir "$@" || exit 1
+[[ "${CONSUMED_ARGS}" -eq 1 ]] && shift
 
-exec python3 -m mav_flight_logger.compute_metrics --run-dir "${RUN_DIR}" "$@"
+exec python3 -m mav_flight_review.compute_metrics --run-dir "${RUN_DIR}" "$@"

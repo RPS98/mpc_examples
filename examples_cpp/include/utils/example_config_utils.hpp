@@ -74,26 +74,27 @@ enum class DelayMode {
  * path under `configs/controllers/` or `configs/generators/`.
  */
 struct RunSpec {
-  std::string controller;         ///< pid | mpc_position | mpc_trajectory
-  std::string generator;          ///< waypoints | jerk_limited | gcopter | dynamic
-  bool enabled                 = true;
+  std::string controller;  ///< pid | mpc_position | mpc_trajectory
+  std::string generator;   ///< waypoints | jerk_limited | gcopter | dynamic
+  bool enabled = true;
   std::string controller_config;  ///< Optional override for the controller YAML path.
   std::string generator_config;   ///< Optional override for the generator YAML path.
 };
 
 struct ExampleConfig {
-  double sim_time         = 0.0;
-  double model_dt         = 0.0;
-  double controller_dt    = 0.0;
-  double mpc_dt           = 0.0;
-  double pid_dt           = 0.0;
-  double max_speed        = 0.0;
-  double hover_time       = 0.0;
-  double settle_margin_s  = 2.0;   ///< Margin added to each waypoint hop (s).
-  bool path_facing        = true;
-  bool benchmark          = false; ///< Skip CSV logging for performance measurement.
-  bool silent             = false; ///< Suppress in-loop console output (progress bar, waypoint messages).
-  bool parallel           = false; ///< Run all enabled cases concurrently (one worker per run).
+  double sim_time           = 0.0;
+  double model_dt           = 0.0;
+  double controller_dt      = 0.0;
+  double mpc_dt             = 0.0;
+  double pid_dt             = 0.0;
+  double max_speed          = 0.0;
+  double hover_time         = 0.0;
+  double settle_margin_s    = 2.0;  ///< Margin added to each waypoint hop (s).
+  bool path_facing          = true;
+  std::string output_format = "mcap";  ///< Output format: "mcap" or "csv".
+  bool benchmark            = false;   ///< Skip CSV logging for performance measurement.
+  bool silent   = false;  ///< Suppress in-loop console output (progress bar, waypoint messages).
+  bool parallel = false;  ///< Run all enabled cases concurrently (one worker per run).
 
   // Compute delay model applied by WaypointsSimulator when forwarding
   // references (generator) and commands (controller) to the high-frequency
@@ -274,9 +275,8 @@ inline void loadRunsFromNode(const YAML::Node& runs_node, std::vector<RunSpec>& 
     throw std::invalid_argument("sim_config.runs must be a sequence of run specs.");
   }
   for (std::size_t i = 0; i < runs_node.size(); ++i) {
-    const YAML::Node& item = runs_node[i];
-    const std::string prefix =
-        "sim_config.runs[" + std::to_string(i) + "]";
+    const YAML::Node& item   = runs_node[i];
+    const std::string prefix = "sim_config.runs[" + std::to_string(i) + "]";
     if (!item || !item.IsMap()) {
       throw std::invalid_argument(prefix + " must be a mapping.");
     }
@@ -287,13 +287,13 @@ inline void loadRunsFromNode(const YAML::Node& runs_node, std::vector<RunSpec>& 
     if (!item["generator"]) {
       throw std::invalid_argument(prefix + ".generator is required.");
     }
-    spec.controller        = item["controller"].as<std::string>();
-    spec.generator         = item["generator"].as<std::string>();
-    spec.enabled           = readBoolOptional(item["enabled"], prefix + ".enabled", true);
-    spec.controller_config = readStringOptional(
-        item["controller_config"], prefix + ".controller_config", std::string());
-    spec.generator_config = readStringOptional(
-        item["generator_config"], prefix + ".generator_config", std::string());
+    spec.controller = item["controller"].as<std::string>();
+    spec.generator  = item["generator"].as<std::string>();
+    spec.enabled    = readBoolOptional(item["enabled"], prefix + ".enabled", true);
+    spec.controller_config =
+        readStringOptional(item["controller_config"], prefix + ".controller_config", std::string());
+    spec.generator_config =
+        readStringOptional(item["generator_config"], prefix + ".generator_config", std::string());
     out.push_back(std::move(spec));
   }
 }
@@ -312,16 +312,18 @@ inline ExampleConfig loadExampleConfig(const std::string& path) {
   config.model_dt = detail::readDoubleRequired(sim["model_dt"], "sim_config.model_dt");
   config.controller_dt =
       detail::readDoubleRequired(sim["controller_dt"], "sim_config.controller_dt");
-  config.mpc_dt      = detail::readDoubleRequired(sim["mpc_dt"], "sim_config.mpc_dt");
-  config.pid_dt      = detail::readDoubleRequired(sim["pid_dt"], "sim_config.pid_dt");
-  config.max_speed   = detail::readDoubleRequired(sim["max_speed"], "sim_config.max_speed");
-  config.hover_time  = detail::readDoubleRequired(sim["hover_time"], "sim_config.hover_time");
-  config.settle_margin_s = detail::readDoubleOptional(
-      sim["settle_margin_s"], "sim_config.settle_margin_s", 2.0);
+  config.mpc_dt     = detail::readDoubleRequired(sim["mpc_dt"], "sim_config.mpc_dt");
+  config.pid_dt     = detail::readDoubleRequired(sim["pid_dt"], "sim_config.pid_dt");
+  config.max_speed  = detail::readDoubleRequired(sim["max_speed"], "sim_config.max_speed");
+  config.hover_time = detail::readDoubleRequired(sim["hover_time"], "sim_config.hover_time");
+  config.settle_margin_s =
+      detail::readDoubleOptional(sim["settle_margin_s"], "sim_config.settle_margin_s", 2.0);
   config.path_facing = detail::readBoolRequired(sim["path_facing"], "sim_config.path_facing");
-  config.benchmark   = detail::readBoolOptional(sim["benchmark"], "sim_config.benchmark", false);
-  config.silent      = detail::readBoolOptional(sim["silent"], "sim_config.silent", false);
-  config.parallel    = detail::readBoolOptional(sim["parallel"], "sim_config.parallel", false);
+  config.output_format =
+      detail::readStringOptional(sim["output_format"], "sim_config.output_format", "mcap");
+  config.benchmark = detail::readBoolOptional(sim["benchmark"], "sim_config.benchmark", false);
+  config.silent    = detail::readBoolOptional(sim["silent"], "sim_config.silent", false);
+  config.parallel  = detail::readBoolOptional(sim["parallel"], "sim_config.parallel", false);
 
   // Delay configuration -------------------------------------------------------
   const std::string ctrl_delay_str = detail::readStringOptional(

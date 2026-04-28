@@ -22,12 +22,12 @@
 //       CSV backend during the transition.
 #if 0
 
-#include <Eigen/Dense>
+#  include <Eigen/Dense>
 
-#include <memory>
-#include <string>
+#  include <memory>
+#  include <string>
 
-#include "mav_flight_logger/csv_logger.hpp"
+#  include "mav_flight_logger/csv_logger.hpp"
 
 namespace mpc_examples::framework {
 

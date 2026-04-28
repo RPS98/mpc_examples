@@ -6,7 +6,7 @@
 """Facade mirror of ``examples_cpp/src/framework/unified_mcap_logger.cpp``.
 
 Accepts the same Eigen-shaped ``LogRow`` the previous CSV facade used and
-translates each row into the matching ``mav_flight_mcap.MCAPLogger.save_*``
+translates each row into the matching ``mav_flight_review.MCAPLogger.save_*``
 calls. Keeping the ``LogRow`` schema local means ``WaypointsSimulator`` and
 unit tests can switch backends without touching their row-building code.
 """
@@ -22,7 +22,7 @@ from typing import Optional
 
 import numpy as np
 
-from mav_flight_mcap import LoggerConfig, MCAPLogger, TimeMode
+from mav_flight_review import LoggerConfig, MCAPLogger, TimeMode
 
 
 def _zero_vec3() -> np.ndarray:
@@ -63,8 +63,15 @@ class LogRow:
     linear_velocity: np.ndarray = field(default_factory=_zero_vec3)    # earth frame
     angular_velocity: np.ndarray = field(default_factory=_zero_vec3)   # body frame
 
+    # Position reference = active waypoint target (stepwise, no delay).
+    # Identical across every combination of controller/generator.
     reference_position: np.ndarray = field(default_factory=_zero_vec3)
-    reference_orientation: np.ndarray = field(default_factory=_identity_quat)
+
+    # Trajectory sample the controller consumes (smooth, with delay applied,
+    # or a virtual carrot advanced along the waypoint path).
+    trajectory_position: np.ndarray = field(default_factory=_zero_vec3)
+    trajectory_velocity: np.ndarray = field(default_factory=_zero_vec3)  # earth frame
+    trajectory_orientation: np.ndarray = field(default_factory=_identity_quat)
 
     thrust_n: float = 0.0
     command_angular_velocity: np.ndarray = field(default_factory=_zero_vec3)
@@ -91,6 +98,8 @@ _TOPIC_MAX_SPEED = '/mpc_examples/max_speed'
 _TOPIC_WAYPOINT_INDEX = '/mpc_examples/waypoint_index'
 _TOPIC_HOVER_ACTIVE = '/mpc_examples/hover_active'
 _TOPIC_MOTOR_SPEEDS = '/drone0/actuator_command/motor_speeds'
+_TOPIC_MOTION_REF_TRAJECTORY = '/drone0/motion_reference/trajectory'
+_TOPIC_MOTION_REF_POSITION = '/drone0/motion_reference/position'
 _TOPIC_META_CONTROLLER = '/mpc_examples/metadata/controller_name'
 _TOPIC_META_GENERATOR = '/mpc_examples/metadata/generator_name'
 _TOPIC_META_RUN_ID = '/mpc_examples/metadata/run_id'
@@ -113,6 +122,11 @@ class UnifiedMcapLogger:
         cfg = LoggerConfig()
         cfg.file_path = output_path
         cfg.time_mode = TimeMode.SIMULATION
+        # Route the built-in pose reference channel to the
+        # ``motion_reference/trajectory`` topic (generator output, with delay);
+        # the stepwise waypoint target gets its own ``motion_reference/position``
+        # channel below.
+        cfg.pose_reference_topic = _TOPIC_MOTION_REF_TRAJECTORY
 
         self._impl: Optional[MCAPLogger] = MCAPLogger(cfg)
 
@@ -126,6 +140,7 @@ class UnifiedMcapLogger:
         self._impl.add_int32_topic(_TOPIC_WAYPOINT_INDEX)
         self._impl.add_int32_topic(_TOPIC_HOVER_ACTIVE)
         self._impl.add_float64_multi_array_topic(_TOPIC_MOTOR_SPEEDS)
+        self._impl.add_vector3_topic(_TOPIC_MOTION_REF_POSITION)
         self._impl.add_string_topic(_TOPIC_META_CONTROLLER)
         self._impl.add_string_topic(_TOPIC_META_GENERATOR)
         self._impl.add_string_topic(_TOPIC_META_RUN_ID)
@@ -179,9 +194,14 @@ class UnifiedMcapLogger:
 
         self._impl.save_state(t, pos, quat, vel, ang)
 
-        pos_ref = np.asarray(row.reference_position, dtype=float).reshape(3)
-        quat_ref = np.asarray(row.reference_orientation, dtype=float).reshape(4)
-        self._impl.save_pose_reference(t, pos_ref, quat_ref)
+        trj_pos = np.asarray(row.trajectory_position, dtype=float).reshape(3)
+        trj_quat = np.asarray(row.trajectory_orientation, dtype=float).reshape(4)
+        self._impl.save_pose_reference(t, trj_pos, trj_quat)
+        trj_vel = np.asarray(row.trajectory_velocity, dtype=float).reshape(3)
+        self._impl.save_twist_reference(t, trj_vel)
+
+        ref_pos = np.asarray(row.reference_position, dtype=float).reshape(3)
+        self._impl.save_vector3(_TOPIC_MOTION_REF_POSITION, t, ref_pos)
 
         ang_cmd = np.asarray(row.command_angular_velocity, dtype=float).reshape(3)
         self._impl.save_actuation(t, float(row.thrust_n), ang_cmd)

@@ -5,20 +5,23 @@
 # Run the mpc_examples showcase. Dispatches through the two C++ binaries
 # (``position_examples``, ``trajectory_examples``) and/or their Python
 # counterparts (``python3 -m examples_py.runs.run_*``) and then runs the
-# metrics + dashboard tools shipped inside ``mav_flight_viewer``
+# metrics + dashboard tools shipped inside ``mav_flight_review``
 # (thirdparty/mav_flight_mcap/viewer).
 #
 # Usage:
-#   scripts/run_all.sh [--lang=cpp|py|both] [--run-id=<id>] [--show]
+#   scripts/run_all.sh [--lang=cpp|py|both] [--run-id=<id>]
+#                      [--no-show] [--no-save]
 #
 # Defaults:
 #   --lang=both
 #   --run-id auto-generated as YYYYmmdd_HHMMSS (shared by both langs so the
 #   CSVs land under simulator_logs/<run_id>/{cpp,py}/).
-#   --show     Display the dashboard window interactively after saving it.
+#   The dashboard is opened interactively AND saved to <run>/plots/*.png.
+#     --no-show: skip the matplotlib windows (e.g. on CI / headless runs).
+#     --no-save: skip writing PNGs to disk.
 #
 # The ``py`` backend requires the CMake build to have run at least once so
-# the pure-Python mirrors (examples_py, mav_flight_mcap, mav_flight_viewer)
+# the pure-Python mirrors (examples_py, mav_flight_mcap, mav_flight_review)
 # are exposed under build/python/.
 
 set -euo pipefail
@@ -38,12 +41,16 @@ ${LD_LIBRARY_PATH:-}"
 
 LANG_SEL="both"
 RUN_ID=""
-SHOW=0
+SHOW=1
+SAVE=1
 for arg in "$@"; do
   case "$arg" in
     --lang=*)   LANG_SEL="${arg#--lang=}" ;;
     --run-id=*) RUN_ID="${arg#--run-id=}" ;;
     --show)     SHOW=1 ;;
+    --no-show)  SHOW=0 ;;
+    --save)     SAVE=1 ;;
+    --no-save)  SAVE=0 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \?//' | head -25
       exit 0
@@ -106,23 +113,23 @@ esac
 
 echo ""
 echo "[run_all] computing metrics"
-# TODO: remove once MCAP pipeline validated.
-# python3 -m mav_flight_logger.compute_metrics --run-dir "$OUT_DIR" || true
-python3 -m mav_flight_viewer.compute_metrics --run-dir "$OUT_DIR" || true
+python3 -m mav_flight_review.compute_metrics --run-dir "$OUT_DIR" || true
+
+echo ""
+echo "[run_all] metrics summary"
+python3 -m mav_flight_review.print_summary --run-dir "$OUT_DIR" || true
 
 echo ""
 echo "[run_all] rendering dashboard"
-# TODO: remove once MCAP pipeline validated.
-# if [[ "$SHOW" -eq 1 ]]; then
-#   python3 -m mav_flight_logger.dashboard --run-dir "$OUT_DIR" --show || true
-# else
-#   python3 -m mav_flight_logger.dashboard --run-dir "$OUT_DIR" || true
-# fi
-if [[ "$SHOW" -eq 1 ]]; then
-  python3 -m mav_flight_viewer.dashboard --run-dir "$OUT_DIR" --show || true
-else
-  python3 -m mav_flight_viewer.dashboard --run-dir "$OUT_DIR" || true
-fi
+DASHBOARD_FLAGS=()
+[[ "$SHOW" -eq 0 ]] && DASHBOARD_FLAGS+=(--no-show)
+[[ "$SAVE" -eq 0 ]] && DASHBOARD_FLAGS+=(--no-save)
+python3 -m mav_flight_review.cli --run-dir "$OUT_DIR" "${DASHBOARD_FLAGS[@]}" || true
 
 echo ""
+if [[ "$SAVE" -eq 1 ]]; then
+  echo "[run_all] dashboard:    $OUT_DIR/plots/run.png"
+  echo "[run_all] metrics fig:  $OUT_DIR/plots/run_metrics.png"
+fi
+echo "[run_all] summary csv:  $OUT_DIR/metrics/summary.csv"
 echo "[run_all] done · $OUT_DIR"

@@ -40,9 +40,8 @@ inline void printCaseBanner(std::size_t index,
                             const std::string& controller,
                             const std::string& generator,
                             const std::string& run_id) {
-  std::cout << "\n[" << std::setw(2) << (index + 1) << "/" << total << "] "
-            << controller << " × " << generator
-            << "  (run_id=" << run_id << ")" << std::endl;
+  std::cout << "\n[" << std::setw(2) << (index + 1) << "/" << total << "] " << controller << " × "
+            << generator << "  (run_id=" << run_id << ")" << std::endl;
 }
 
 /**
@@ -57,7 +56,7 @@ inline void printStatus(double t,
                         std::size_t n_waypoints,
                         double last_err_m,
                         double ctrl_time_us) {
-  const double progress = (t_total > 0.0) ? std::clamp(t / t_total, 0.0, 1.0) : 0.0;
+  const double progress   = (t_total > 0.0) ? std::clamp(t / t_total, 0.0, 1.0) : 0.0;
   constexpr int kBarWidth = 30;
   const int pos           = static_cast<int>(kBarWidth * progress);
 
@@ -71,8 +70,7 @@ inline void printStatus(double t,
   std::cout << "\r  " << bar.str() << "  t=" << std::fixed << std::setprecision(2) << t << "/"
             << t_total << "s  wp=" << (waypoint_index + 1) << "/" << n_waypoints
             << "  err=" << std::setprecision(3) << last_err_m << "m"
-            << "  ctrl=" << std::setprecision(0) << ctrl_time_us << "µs      "
-            << std::flush;
+            << "  ctrl=" << std::setprecision(0) << ctrl_time_us << "µs      " << std::flush;
 }
 
 /** @brief Summary line emitted after each run finishes. */

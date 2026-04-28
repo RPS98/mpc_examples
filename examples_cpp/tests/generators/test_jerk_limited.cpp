@@ -17,7 +17,7 @@ using mpc_examples::testing::repoPath;
 class JerkLimitedGeneratorTest : public ::testing::Test {
 protected:
   mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
-  mav_model::State            state_   = hoverStateAt({0.0, 0.0, 10.0});
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
   std::unique_ptr<JerkLimitedGenerator> gen_;
 
   void SetUp() override {
@@ -36,16 +36,16 @@ TEST_F(JerkLimitedGeneratorTest, ProducesFiniteReferencesOver50Steps) {
     const double t = 0.01 * k;
     gen_->update(t, state_);
     const auto s = gen_->evaluate(t);
-    ASSERT_TRUE(s.position.allFinite())     << "step " << k;
-    ASSERT_TRUE(s.velocity.allFinite())     << "step " << k;
+    ASSERT_TRUE(s.position.allFinite()) << "step " << k;
+    ASSERT_TRUE(s.velocity.allFinite()) << "step " << k;
     ASSERT_TRUE(s.acceleration.allFinite()) << "step " << k;
   }
 }
 
 TEST_F(JerkLimitedGeneratorTest, AdvertisesPositionVelocityAcceleration) {
   const auto mask = gen_->providedReferenceFields();
-  using mpc_examples::framework::ReferenceField;
   using mpc_examples::framework::hasField;
+  using mpc_examples::framework::ReferenceField;
   EXPECT_TRUE(hasField(mask, ReferenceField::kPosition));
   EXPECT_TRUE(hasField(mask, ReferenceField::kVelocity));
   EXPECT_TRUE(hasField(mask, ReferenceField::kAcceleration));

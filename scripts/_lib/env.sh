@@ -31,11 +31,36 @@ SIM_CFG="${SIM_CFG:-configs/simulation/config_simulator.yaml}"
 # NOTE: OUTPUT_DIR is intentionally NOT created here. Only run helpers that
 # actually need to write CSVs (run_cpp.sh, run_py.sh) materialise it via
 # ensure_output_dir(). Post-processing wrappers (compute_metrics.sh,
-# dashboard.sh, plot_csv.sh) must not spawn an empty simulator_logs/<id>
+# compute_metrics.sh, plot.sh) must not spawn an empty simulator_logs/<id>
 # directory or "find newest run" lookups pick it up instead of real runs.
 ensure_output_dir() {
   if [[ -z "${OUTPUT_DIR:-}" ]]; then
     OUTPUT_DIR="simulator_logs/$(date +%Y%m%d_%H%M%S)"
   fi
   mkdir -p "${OUTPUT_DIR}"
+}
+
+# post_run_review <run_dir> [--no-show] [--no-save]
+# Runs compute_metrics and the mav_flight_review dashboard for the given
+# run directory. Called automatically by run_one_cpp / run_one_py so every
+# single-combination script gets metrics + plots without extra boilerplate.
+post_run_review() {
+  local run_dir="${1:?post_run_review: run_dir required}"
+  shift
+  local no_show="" no_save=""
+  for arg in "$@"; do
+    case "${arg}" in --no-show) no_show="--no-show" ;; --no-save) no_save="--no-save" ;; esac
+  done
+
+  echo ""
+  echo "[metrics] ${run_dir}"
+  python3 -m mav_flight_review.compute_metrics --run-dir "${run_dir}" || true
+
+  echo ""
+  python3 -m mav_flight_review.print_summary --run-dir "${run_dir}" || true
+
+  echo ""
+  echo "[plot   ] ${run_dir}"
+  python3 -m mav_flight_review.cli \
+    --run-dir "${run_dir}" ${no_show} ${no_save} || true
 }

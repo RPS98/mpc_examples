@@ -21,8 +21,8 @@ namespace mpc_examples::adapters {
 
 namespace {
 
-constexpr double kMinHorizontalSpeedForYaw = 0.5;   // [m/s]
-constexpr double kMaxYawRateRefRadPerSec   = 1.0;   // [rad/s]
+constexpr double kMinHorizontalSpeedForYaw = 0.5;  // [m/s]
+constexpr double kMaxYawRateRefRadPerSec   = 1.0;  // [rad/s]
 
 double wrapToPi(double x) {
   while (x > M_PI) x -= 2.0 * M_PI;
@@ -127,7 +127,7 @@ framework::ReferenceSample JerkLimitedGenerator::evaluate(double t) const {
   // integrator is stateful and would be mutated by a proper look-ahead, so we
   // use a constant-velocity extrapolation, clamped so the horizon cannot
   // overshoot the current waypoint.
-  const double dt = t - last_sample_t_;
+  const double dt              = t - last_sample_t_;
   framework::ReferenceSample s = last_sample_;
   if (dt <= 0.0) {
     return s;

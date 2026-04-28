@@ -4,7 +4,7 @@
 /**
  * @file unified_mcap_logger.hpp
  *
- * Thin facade over ``mav_flight_mcap::MCAPLogger`` that exposes the same
+ * Thin facade over ``mav_flight_review::MCAPLogger`` that exposes the same
  * Eigen-native ``LogRow`` API previously served by the CSV facade so every
  * call-site (WaypointsSimulator, unit tests, etc.) can switch backends
  * without touching its row-building code. Each ``logRow`` call is mapped to
@@ -21,7 +21,7 @@
 #include <memory>
 #include <string>
 
-#include "mav_flight_mcap/mcap_logger.hpp"
+#include "mav_flight_review/mcap_logger.hpp"
 
 namespace mpc_examples::framework {
 
@@ -36,8 +36,8 @@ namespace mpc_examples::framework {
 struct RunMetadata {
   std::string controller_name;
   std::string generator_name;
-  std::string run_id;                 ///< e.g. "20260421_153012".
-  std::string language = "cpp";       ///< "cpp" | "py".
+  std::string run_id;            ///< e.g. "20260421_153012".
+  std::string language = "cpp";  ///< "cpp" | "py".
 };
 
 /**
@@ -45,37 +45,47 @@ struct RunMetadata {
  *
  * Mirrors the schema of the retired CSV facade so ``WaypointsSimulator`` does
  * not need to change the way it assembles rows. The facade translates these
- * fields into the ROS 2 topics registered by ``mav_flight_mcap::MCAPLogger``.
+ * fields into the ROS 2 topics registered by ``mav_flight_review::MCAPLogger``.
  */
 struct LogRow {
   double time = 0.0;
 
   // State (earth frame) -------------------------------------------------------
-  Eigen::Vector3d position            = Eigen::Vector3d::Zero();
-  Eigen::Quaterniond orientation      = Eigen::Quaterniond::Identity();
-  Eigen::Vector3d linear_velocity     = Eigen::Vector3d::Zero();  ///< earth frame.
-  Eigen::Vector3d angular_velocity    = Eigen::Vector3d::Zero();  ///< body frame.
+  Eigen::Vector3d position         = Eigen::Vector3d::Zero();
+  Eigen::Quaterniond orientation   = Eigen::Quaterniond::Identity();
+  Eigen::Vector3d linear_velocity  = Eigen::Vector3d::Zero();  ///< earth frame.
+  Eigen::Vector3d angular_velocity = Eigen::Vector3d::Zero();  ///< body frame.
 
   // Reference (earth frame) ---------------------------------------------------
-  Eigen::Vector3d reference_position           = Eigen::Vector3d::Zero();
-  Eigen::Quaterniond reference_orientation     = Eigen::Quaterniond::Identity();
+  /// Active waypoint target (stepwise, no delay). Identical across every
+  /// combination of controller/generator since the scheduler is deterministic
+  /// and shares the same waypoints + max_speed + settle_margin_s. This is the
+  /// **position reference** the vehicle is ultimately driven toward.
+  Eigen::Vector3d reference_position = Eigen::Vector3d::Zero();
+
+  /// Trajectory sample the controller consumes at ``t``: smooth generator
+  /// output with the computation delay applied, or a virtual carrot that the
+  /// controller advances along the waypoint path. Differs across generators.
+  Eigen::Vector3d trajectory_position       = Eigen::Vector3d::Zero();
+  Eigen::Vector3d trajectory_velocity       = Eigen::Vector3d::Zero();  ///< earth frame.
+  Eigen::Quaterniond trajectory_orientation = Eigen::Quaterniond::Identity();
 
   // Actuation -----------------------------------------------------------------
-  double thrust_n                              = 0.0;
-  Eigen::Vector3d command_angular_velocity     = Eigen::Vector3d::Zero();
-  Eigen::Matrix<double, 4, 1> motor_w          = Eigen::Matrix<double, 4, 1>::Zero();
+  double thrust_n                          = 0.0;
+  Eigen::Vector3d command_angular_velocity = Eigen::Vector3d::Zero();
+  Eigen::Matrix<double, 4, 1> motor_w      = Eigen::Matrix<double, 4, 1>::Zero();
 
   // Compute times + delays (microseconds) -------------------------------------
-  double controller_compute_time_us            = 0.0;
-  double generator_update_time_us              = 0.0;
-  double generator_eval_time_us                = 0.0;
-  double controller_delay_applied_us           = 0.0;
-  double generator_delay_applied_us            = 0.0;
+  double controller_compute_time_us  = 0.0;
+  double generator_update_time_us    = 0.0;
+  double generator_eval_time_us      = 0.0;
+  double controller_delay_applied_us = 0.0;
+  double generator_delay_applied_us  = 0.0;
 
   // Scheduler state -----------------------------------------------------------
-  int    waypoint_index   = 0;
-  bool   hover_active     = false;
-  double max_speed        = 0.0;
+  int waypoint_index = 0;
+  bool hover_active  = false;
+  double max_speed   = 0.0;
 };
 
 /**
@@ -83,11 +93,18 @@ struct LogRow {
  * used to dump as 45 flat columns, now split across ROS 2 topics.
  *
  * Topic layout:
- *   - ``/drone0/self_localization/pose``    : state pose (PoseStamped).
- *   - ``/drone0/self_localization/twist``   : state twist (TwistStamped).
- *   - ``/drone0/sensor_measurements/odom``  : full odometry (Odometry).
- *   - ``/drone0/motion_reference/pose``     : reference pose (PoseStamped).
- *   - ``/drone0/actuator_command/thrust``   : commanded thrust (Thrust).
+ *   - ``/drone0/self_localization/pose``        : state pose (PoseStamped).
+ *   - ``/drone0/self_localization/twist``       : state twist (TwistStamped).
+ *   - ``/drone0/sensor_measurements/odom``      : full odometry (Odometry).
+ *   - ``/drone0/motion_reference/trajectory``   : generator trajectory sample
+ *                                                 with delay applied (PoseStamped).
+ *   - ``/drone0/motion_reference/twist``        : per-axis velocity setpoint
+ *                                                 from the generator with the
+ *                                                 same delay (TwistStamped,
+ *                                                 linear only).
+ *   - ``/drone0/motion_reference/position``     : active waypoint target,
+ *                                                 stepwise, no delay (Vector3).
+ *   - ``/drone0/actuator_command/thrust``       : commanded thrust (Thrust).
  *   - ``/drone0/actuator_command/twist``    : commanded body rates (TwistStamped).
  *   - ``/drone0/actuator_command/motor_speeds`` : per-rotor speeds (Float64MultiArray).
  *   - ``/mpc_examples/{controller,generator}_*`` : compute times / delays (Float64).
@@ -117,10 +134,10 @@ public:
   const RunMetadata& metadata() const { return metadata_; }
 
 private:
-  std::string                                  file_path_;
-  RunMetadata                                  metadata_;
-  std::unique_ptr<mav_flight_mcap::MCAPLogger> impl_;
-  bool                                         closed_ = false;
+  std::string file_path_;
+  RunMetadata metadata_;
+  std::unique_ptr<mav_flight_review::MCAPLogger> impl_;
+  bool closed_ = false;
 };
 
 }  // namespace mpc_examples::framework

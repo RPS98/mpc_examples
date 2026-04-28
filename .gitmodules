@@ -18,3 +18,11 @@
 	path = thirdparty/trajectory_generator_jerk_limited
 	url = git@github.com:RPS98/trajectory_generator_jerk_limited.git
 	branch = main
+[submodule "thirdparty/mav_trajectory_generation_lib"]
+	path = thirdparty/mav_trajectory_generation_lib
+	url = git@github.com:RPS98/mav_trajectory_generation_lib.git
+	branch = main
+[submodule "thirdparty/mav_flight_review"]
+	path = thirdparty/mav_flight_review
+	url = git@github.com:RPS98/mav_flight_review.git
+	branch = main

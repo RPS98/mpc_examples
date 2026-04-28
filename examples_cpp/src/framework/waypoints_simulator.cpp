@@ -73,8 +73,8 @@ double resolveDelay(const DelayMode mode, const double measured_s, const double 
 
 struct TimedCommand {
   ControlCommand cmd;
-  double compute_time_us   = 0.0;
-  double delay_applied_us  = 0.0;
+  double compute_time_us  = 0.0;
+  double delay_applied_us = 0.0;
 };
 
 struct TimedReference {
@@ -86,19 +86,14 @@ struct TimedReference {
 
 }  // namespace
 
-WaypointsSimulator::WaypointsSimulator(
-    std::unique_ptr<IController> controller,
-    std::unique_ptr<ITrajectoryGenerator> traj_gen,
-    const ExampleConfig& example_cfg,
-    const mav_simulator::SimulatorParameters& simulator_params,
-    const std::string& output_csv,
-    const RunMetadata& metadata)
-    : controller_(std::move(controller)),
-      traj_gen_(std::move(traj_gen)),
-      example_cfg_(example_cfg),
-      output_csv_(output_csv),
-      metadata_(metadata),
-      sim_(simulator_params) {
+WaypointsSimulator::WaypointsSimulator(std::unique_ptr<IController> controller,
+                                       std::unique_ptr<ITrajectoryGenerator> traj_gen,
+                                       const ExampleConfig& example_cfg,
+                                       const mav_simulator::SimulatorParameters& simulator_params,
+                                       const std::string& output_csv,
+                                       const RunMetadata& metadata)
+    : controller_(std::move(controller)), traj_gen_(std::move(traj_gen)), example_cfg_(example_cfg),
+      output_csv_(output_csv), metadata_(metadata), sim_(simulator_params) {
   if (!controller_) {
     throw std::invalid_argument("WaypointsSimulator: controller must not be null.");
   }
@@ -187,7 +182,7 @@ void WaypointsSimulator::run() {
   imu_times.reserve(est_indi_steps);
   model_times.reserve(est_indi_steps);
 
-  double tracking_sq_sum = 0.0;
+  double tracking_sq_sum       = 0.0;
   std::size_t tracking_samples = 0;
 
   // --- Initial synchronous command (warm-start the buffers) -----------------
@@ -208,8 +203,8 @@ void WaypointsSimulator::run() {
   }
 
   // --- Main loop ------------------------------------------------------------
-  ControlCommand current_cmd = ControlCommand{};
-  ReferenceSample current_ref = refs.front();
+  ControlCommand current_cmd    = ControlCommand{};
+  ReferenceSample current_ref   = refs.front();
   double current_cmd_compute_us = 0.0;
   double current_cmd_delay_us   = 0.0;
   double current_ref_update_us  = 0.0;
@@ -255,14 +250,14 @@ void WaypointsSimulator::run() {
     for (int k = 0; k < N_samples; ++k) {
       refs[static_cast<std::size_t>(k)] = traj_gen_->evaluate(t + k * dt_h);
     }
-    const auto gen_t2 = Clock::now();
+    const auto gen_t2         = Clock::now();
     const double gen_update_s = std::chrono::duration<double>(gen_t1 - gen_t0).count();
     const double gen_eval_s   = std::chrono::duration<double>(gen_t2 - gen_t1).count();
     generator_update_times.push_back(gen_update_s);
     generator_eval_times.push_back(gen_eval_s);
-    const double gen_delay_s  = resolveDelay(example_cfg_.generator_delay_mode,
-                                             gen_update_s + gen_eval_s,
-                                             example_cfg_.generator_delay_fixed_s);
+    const double gen_delay_s =
+        resolveDelay(example_cfg_.generator_delay_mode, gen_update_s + gen_eval_s,
+                     example_cfg_.generator_delay_fixed_s);
 
     TimedReference ref_payload;
     ref_payload.sample           = refs.front();
@@ -272,14 +267,13 @@ void WaypointsSimulator::run() {
     ref_buffer.push(ref_payload, t + gen_delay_s);
 
     // --- Controller step (measure wall-clock) ------------------------------
-    const auto ctrl_t0 = Clock::now();
-    const ControlCommand cmd = controller_->computeCommand(state, refs);
-    const auto ctrl_t1 = Clock::now();
+    const auto ctrl_t0        = Clock::now();
+    const ControlCommand cmd  = controller_->computeCommand(state, refs);
+    const auto ctrl_t1        = Clock::now();
     const double ctrl_solve_s = std::chrono::duration<double>(ctrl_t1 - ctrl_t0).count();
     controller_times.push_back(ctrl_solve_s);
 
-    const double ctrl_delay_s = resolveDelay(example_cfg_.controller_delay_mode,
-                                             ctrl_solve_s,
+    const double ctrl_delay_s = resolveDelay(example_cfg_.controller_delay_mode, ctrl_solve_s,
                                              example_cfg_.controller_delay_fixed_s);
 
     TimedCommand cmd_payload;
@@ -304,15 +298,15 @@ void WaypointsSimulator::run() {
 
       // Query buffers for the latest sample visible at t_sub.
       if (auto new_cmd = cmd_buffer.latestAvailable(t_sub)) {
-        current_cmd             = new_cmd->cmd;
-        current_cmd_compute_us  = new_cmd->compute_time_us;
-        current_cmd_delay_us    = new_cmd->delay_applied_us;
+        current_cmd            = new_cmd->cmd;
+        current_cmd_compute_us = new_cmd->compute_time_us;
+        current_cmd_delay_us   = new_cmd->delay_applied_us;
       }
       if (auto new_ref = ref_buffer.latestAvailable(t_sub)) {
-        current_ref            = new_ref->sample;
-        current_ref_update_us  = new_ref->update_time_us;
-        current_ref_eval_us    = new_ref->eval_time_us;
-        current_ref_delay_us   = new_ref->delay_applied_us;
+        current_ref           = new_ref->sample;
+        current_ref_update_us = new_ref->update_time_us;
+        current_ref_eval_us   = new_ref->eval_time_us;
+        current_ref_delay_us  = new_ref->delay_applied_us;
       }
 
       sim_.setReferenceRates(current_cmd.thrust_n, current_cmd.angular_rate);
@@ -337,31 +331,33 @@ void WaypointsSimulator::run() {
       t_inner = t_sub;
 
       // Log + accumulate tracking RMSE after this INDI sub-step.
-      const mav_model::State s = sim_.getState();
+      const mav_model::State s           = sim_.getState();
       const Eigen::Vector3d tracking_err = s.getPositionVector() - current_ref.position;
       tracking_sq_sum += tracking_err.squaredNorm();
       ++tracking_samples;
 
       if (logger) {
         LogRow row;
-        row.time                         = t_sub;
-        row.position                     = s.getPositionVector();
-        row.orientation                  = s.getOrientationVector();
-        row.linear_velocity              = s.getLinearVelocityVector();
-        row.angular_velocity             = s.getAngularVelocityVector();
-        row.reference_position           = current_ref.position;
-        row.reference_orientation        = eulerToQuaternion(0.0, 0.0, current_ref.yaw);
-        row.thrust_n                     = current_cmd.thrust_n;
-        row.command_angular_velocity     = current_cmd.angular_rate;
-        row.motor_w                      = s.getMotorAngularVelocityVector();
-        row.controller_compute_time_us   = current_cmd_compute_us;
-        row.generator_update_time_us     = current_ref_update_us;
-        row.generator_eval_time_us       = current_ref_eval_us;
-        row.controller_delay_applied_us  = current_cmd_delay_us;
-        row.generator_delay_applied_us   = current_ref_delay_us;
-        row.waypoint_index               = active_index;
-        row.hover_active                 = hover_active;
-        row.max_speed                    = max_speed;
+        row.time                       = t_sub;
+        row.position                   = s.getPositionVector();
+        row.orientation                = s.getOrientationVector();
+        row.linear_velocity            = s.getLinearVelocityVector();
+        row.angular_velocity           = s.getAngularVelocityVector();
+        row.reference_position         = scheduler.waypoint(static_cast<std::size_t>(active_index));
+        row.trajectory_position        = current_ref.position;
+        row.trajectory_velocity        = current_ref.velocity;
+        row.trajectory_orientation     = eulerToQuaternion(0.0, 0.0, current_ref.yaw);
+        row.thrust_n                   = current_cmd.thrust_n;
+        row.command_angular_velocity   = current_cmd.angular_rate;
+        row.motor_w                    = s.getMotorAngularVelocityVector();
+        row.controller_compute_time_us = current_cmd_compute_us;
+        row.generator_update_time_us   = current_ref_update_us;
+        row.generator_eval_time_us     = current_ref_eval_us;
+        row.controller_delay_applied_us = current_cmd_delay_us;
+        row.generator_delay_applied_us  = current_ref_delay_us;
+        row.waypoint_index              = active_index;
+        row.hover_active                = hover_active;
+        row.max_speed                   = max_speed;
         logger->logRow(row);
       }
     }
@@ -370,30 +366,30 @@ void WaypointsSimulator::run() {
 
     if (!silent) {
       const Eigen::Vector3d state_pos = sim_.getState().getPositionVector();
-      const double err_now = (state_pos - current_ref.position).norm();
+      const double err_now            = (state_pos - current_ref.position).norm();
       printStatus(t, max_sim_time, active_index, scheduler.size(), err_now, current_cmd_compute_us);
     }
   }
 
-  const auto wall_end = Clock::now();
+  const auto wall_end      = Clock::now();
   const double real_time_s = std::chrono::duration<double>(wall_end - wall_start).count();
   const double rmse_m      = tracking_samples > 0
                                  ? std::sqrt(tracking_sq_sum / static_cast<double>(tracking_samples))
                                  : 0.0;
 
   stats_ = BenchmarkStats{
-      .simulated_time_s        = t,
-      .real_time_s             = real_time_s,
-      .sim_speedup             = (real_time_s > 0.0) ? (t / real_time_s) : 0.0,
-      .controller_mean_us      = meanUs(controller_times),
+      .simulated_time_s         = t,
+      .real_time_s              = real_time_s,
+      .sim_speedup              = (real_time_s > 0.0) ? (t / real_time_s) : 0.0,
+      .controller_mean_us       = meanUs(controller_times),
       .generator_update_mean_us = meanUs(generator_update_times),
       .generator_eval_mean_us   = meanUs(generator_eval_times),
-      .indi_mean_us            = meanUs(indi_times),
-      .imu_mean_us             = meanUs(imu_times),
-      .model_mean_us           = meanUs(model_times),
-      .tracking_rmse_m         = rmse_m,
-      .controller_steps        = controller_times.size(),
-      .indi_steps              = indi_times.size(),
+      .indi_mean_us             = meanUs(indi_times),
+      .imu_mean_us              = meanUs(imu_times),
+      .model_mean_us            = meanUs(model_times),
+      .tracking_rmse_m          = rmse_m,
+      .controller_steps         = controller_times.size(),
+      .indi_steps               = indi_times.size(),
   };
 
   if (!silent) {

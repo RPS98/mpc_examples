@@ -48,8 +48,7 @@ public:
 
   static Config loadConfigFromYaml(const std::string& path);
 
-  void initialize(const mav_model::State& initial_state,
-                  const ExampleConfig& example_cfg) override;
+  void initialize(const mav_model::State& initial_state, const ExampleConfig& example_cfg) override;
 
   void onWaypointChanged(const Eigen::Vector3d& next_waypoint,
                          const mav_model::State& state,
@@ -74,9 +73,9 @@ private:
   Eigen::Vector3d target_wp_ = Eigen::Vector3d::Zero();
   bool path_facing_          = true;
 
-  double prev_t_         = 0.0;
-  bool has_prev_t_       = false;
-  double last_sample_t_  = 0.0;  //!< Sim-time at which last_sample_ was produced.
+  double prev_t_        = 0.0;
+  bool has_prev_t_      = false;
+  double last_sample_t_ = 0.0;  //!< Sim-time at which last_sample_ was produced.
 
   framework::ReferenceSample last_sample_{};
   double yaw_ref_hold_ = 0.0;

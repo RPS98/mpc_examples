@@ -25,9 +25,7 @@ namespace mpc_examples::adapters {
 
 namespace {
 
-Eigen::Quaterniond yawToQuaternion(double yaw) {
-  return eulerToQuaternion(0.0, 0.0, yaw);
-}
+Eigen::Quaterniond yawToQuaternion(double yaw) { return eulerToQuaternion(0.0, 0.0, yaw); }
 
 /**
  * @brief Build stage references along the straight line from current to goal.
@@ -64,9 +62,7 @@ void setProgressiveReferences(acados_mpc::MPCData* mpc_data,
                                             desired_orientation.y(), desired_orientation.z()});
 }
 
-void updateSpeedConstraint(acados_mpc::MPC& mpc,
-                           double soft_speed_margin,
-                           double max_speed) {
+void updateSpeedConstraint(acados_mpc::MPC& mpc, double soft_speed_margin, double max_speed) {
   if constexpr (acados_mpc::NonlinearConstraintBounds::Nh > 0) {
     const double soft_speed = soft_speed_margin * max_speed;
     const std::array<double, acados_mpc::NonlinearConstraintBounds::Nh> uh = {
@@ -145,10 +141,10 @@ framework::ControlCommand MpcPositionController::computeCommand(
   setProgressiveReferences(mpc_data, position, ref.position, desired_orientation, v_ref_,
                            dt_horizon_, horizon_steps_);
 
-  const auto t0       = std::chrono::high_resolution_clock::now();
-  const int status    = mpc_->solve();
-  const auto t1       = std::chrono::high_resolution_clock::now();
-  last_solve_us_      = std::chrono::duration<double>(t1 - t0).count() * 1e6;
+  const auto t0    = std::chrono::high_resolution_clock::now();
+  const int status = mpc_->solve();
+  const auto t1    = std::chrono::high_resolution_clock::now();
+  last_solve_us_   = std::chrono::duration<double>(t1 - t0).count() * 1e6;
 
   if (status != 0) {
     throw std::runtime_error("MpcPositionController: solver returned status " +
@@ -156,8 +152,8 @@ framework::ControlCommand MpcPositionController::computeCommand(
   }
 
   framework::ControlCommand cmd;
-  cmd.thrust_n = mpc_data->actuation.getThrust();
-  const auto w = mpc_data->actuation.getAngularVelocity();
+  cmd.thrust_n     = mpc_data->actuation.getThrust();
+  const auto w     = mpc_data->actuation.getAngularVelocity();
   cmd.angular_rate = {w[0], w[1], w[2]};
   return cmd;
 }

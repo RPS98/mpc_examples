@@ -10,20 +10,20 @@
 #include "test_helpers.hpp"
 
 using mpc_examples::adapters::MpcPositionController;
-using mpc_examples::testing::hoverStateAt;
 using mpc_examples::testing::horizonAtPosition;
+using mpc_examples::testing::hoverStateAt;
 using mpc_examples::testing::loadTestSimConfig;
 using mpc_examples::testing::repoPath;
 
 class MpcPositionControllerTest : public ::testing::Test {
 protected:
   mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
-  mav_model::State            state_   = hoverStateAt({0.0, 0.0, 10.0});
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
   std::unique_ptr<MpcPositionController> ctrl_;
 
   void SetUp() override {
-    auto cfg = MpcPositionController::loadConfigFromYaml(
-        repoPath("configs/controllers/config_mpc.yaml"));
+    auto cfg =
+        MpcPositionController::loadConfigFromYaml(repoPath("configs/controllers/config_mpc.yaml"));
     ctrl_ = std::make_unique<MpcPositionController>(cfg);
     ctrl_->initialize(state_, sim_cfg_);
   }

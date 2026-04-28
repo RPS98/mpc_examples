@@ -30,6 +30,7 @@ class GeneratorKeys:
     JERK_LIMITED = 'jerk_limited'
     GCOPTER = 'gcopter'
     DYNAMIC = 'dynamic'
+    MAV_TRAJ_GEN = 'mav_traj_gen'
 
 
 def default_controller_config_path(name: str) -> str:
@@ -51,12 +52,17 @@ def default_generator_config_path(name: str) -> str:
         return 'configs/generators/config_gcopter.yaml'
     if name == GeneratorKeys.DYNAMIC:
         return 'configs/generators/config_dynamic.yaml'
+    if name == GeneratorKeys.MAV_TRAJ_GEN:
+        return 'configs/generators/config_mav_traj_gen.yaml'
     raise ValueError(f"Unknown generator name: '{name}'.")
 
 
-def make_controller(name: str, config_path: str = '') -> IController:
-    from examples_py.controllers.pid_geometric_controller import (
-        PidGeometricController,
+def make_controller(name: str, config_path: str = '', is_trajectory_scope: bool = False) -> IController:
+    from examples_py.controllers.pid_position_geometric_controller import (
+        PidPositionGeometricController,
+    )
+    from examples_py.controllers.pid_trajectory_geometric_controller import (
+        PidTrajectoryGeometricController,
     )
     from examples_py.controllers.mpc_position_controller import (
         MpcPositionController,
@@ -67,8 +73,12 @@ def make_controller(name: str, config_path: str = '') -> IController:
 
     path = config_path or default_controller_config_path(name)
     if name == ControllerKeys.PID:
-        cfg = PidGeometricController.load_config_from_yaml(path)
-        return PidGeometricController(cfg)
+        if is_trajectory_scope:
+            cfg = PidTrajectoryGeometricController.load_config_from_yaml(path)
+            return PidTrajectoryGeometricController(cfg)
+        else:
+            cfg = PidPositionGeometricController.load_config_from_yaml(path)
+            return PidPositionGeometricController(cfg)
     if name == ControllerKeys.MPC_POSITION:
         cfg = MpcPositionController.load_config_from_yaml(path)
         return MpcPositionController(cfg)
@@ -91,6 +101,9 @@ def make_generator(name: str, config_path: str = '') -> ITrajectoryGenerator:
     from examples_py.generators.dynamic_trajectory_generator import (
         DynamicTrajectoryGenerator,
     )
+    from examples_py.generators.mav_traj_gen_generator import (
+        MavTrajGenGenerator,
+    )
 
     path = config_path or default_generator_config_path(name)
     if name == GeneratorKeys.WAYPOINTS:
@@ -105,4 +118,7 @@ def make_generator(name: str, config_path: str = '') -> ITrajectoryGenerator:
     if name == GeneratorKeys.DYNAMIC:
         cfg = DynamicTrajectoryGenerator.load_config_from_yaml(path)
         return DynamicTrajectoryGenerator(cfg)
+    if name == GeneratorKeys.MAV_TRAJ_GEN:
+        cfg = MavTrajGenGenerator.load_config_from_yaml(path)
+        return MavTrajGenGenerator(cfg)
     raise ValueError(f"Unknown generator name: '{name}'.")

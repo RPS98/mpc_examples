@@ -27,8 +27,12 @@ constexpr double kMinHorizontalSpeedForYaw = 0.5;  // [m/s]
 constexpr double kMaxYawRateRefRadPerSec   = 1.0;  // [rad/s]
 
 double wrapToPi(double x) {
-  while (x > M_PI) x -= 2.0 * M_PI;
-  while (x < -M_PI) x += 2.0 * M_PI;
+  while (x > M_PI) {
+    x -= 2.0 * M_PI;
+  }
+  while (x < -M_PI) {
+    x += 2.0 * M_PI;
+  }
   return x;
 }
 
@@ -82,15 +86,14 @@ GcopterGenerator::Config GcopterGenerator::loadConfigFromYaml(const std::string&
   cfg.optimization.tilt_weight      = req(opt, "tilt_weight");
   cfg.optimization.thrust_weight    = req(opt, "thrust_weight");
   if (opt["smoothing_eps"]) {
-    cfg.optimization.smoothing_eps = detail::readDoubleRequired(opt["smoothing_eps"],
-                                                                "smoothing_eps");
+    cfg.optimization.smoothing_eps =
+        detail::readDoubleRequired(opt["smoothing_eps"], "smoothing_eps");
   }
   if (opt["integral_resolution"]) {
     cfg.optimization.integral_resolution = opt["integral_resolution"].as<int>();
   }
   if (opt["rel_cost_tol"]) {
-    cfg.optimization.rel_cost_tol = detail::readDoubleRequired(opt["rel_cost_tol"],
-                                                               "rel_cost_tol");
+    cfg.optimization.rel_cost_tol = detail::readDoubleRequired(opt["rel_cost_tol"], "rel_cost_tol");
   }
   return cfg;
 }
@@ -116,8 +119,12 @@ void GcopterGenerator::initialize(const mav_model::State& initial_state,
   has_plan_        = false;
 
   // Construct the solver once; it is reused across segments via generate().
-  ctrl_ = std::make_unique<gcopter_lib::TrajectoryGenerator>(
-      cfg_.drone_params, cfg_.drone_limits, cfg_.optimization);
+  gcopter_lib::GeneratorConfig generator_cfg;
+  generator_cfg.params                       = cfg_.drone_params;
+  generator_cfg.limits                       = cfg_.drone_limits;
+  generator_cfg.optimization                 = cfg_.optimization;
+  generator_cfg.optimization.corridor_margin = cfg_.corridor_margin;
+  ctrl_ = std::make_unique<gcopter_lib::TrajectoryGenerator>(generator_cfg);
 }
 
 void GcopterGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
@@ -134,14 +141,14 @@ void GcopterGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
     return;
   }
 
-  // Insert a midpoint to guarantee ≥ 2 MINCO segments. With a single segment
-  // the L-BFGS back-end is prone to "negative line-search step" failures.
-  std::vector<gcopter_lib::Waypoint> wps(3);
+  // Two-waypoint hop. MINCO + L-BFGS converges fine for any non-degenerate
+  // segment; the pure-vertical degeneracy is handled inside gcopter_lib via
+  // OptimizationConfig::vertical_perturbation, so the adapter just hands
+  // (start, end) to the solver and trusts it to converge.
+  std::vector<gcopter_lib::Waypoint> wps(2);
   wps[0].position = p0;
-  wps[1].position = 0.5 * (p0 + next_waypoint);
-  wps[2].position = next_waypoint;
-
-  has_plan_ = ctrl_->generate(wps, cfg_.corridor_margin);
+  wps[1].position = next_waypoint;
+  has_plan_ = ctrl_->generate(wps, cfg_.drone_limits.max_velocity);
   if (!has_plan_) {
     // Fall back to a static setpoint at next_waypoint. The comparison remains
     // meaningful: gcopter failing here is an intrinsic property of batch

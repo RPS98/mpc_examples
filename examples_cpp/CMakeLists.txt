@@ -23,13 +23,11 @@ set(_inc ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # ---------------------------------------------------------------------------
 # framework: IController, ITrajectoryGenerator, WaypointsSimulator,
-#            WaypointScheduler, UnifiedCsvLogger (facade over mav_flight_logger).
+#            WaypointScheduler, UnifiedMcapLogger (facade over mav_flight_review).
 # ---------------------------------------------------------------------------
 add_library(mpc_examples_framework STATIC
   src/framework/waypoints_simulator.cpp
   src/framework/waypoint_scheduler.cpp
-  # TODO: remove once MCAP pipeline validated.
-  # src/framework/unified_csv_logger.cpp
   src/framework/unified_mcap_logger.cpp
 )
 
@@ -40,9 +38,7 @@ target_include_directories(mpc_examples_framework PUBLIC
 target_link_libraries(mpc_examples_framework PUBLIC
   mav_simulator        # INTERFACE: provides mav_model / simulator headers + Eigen
   yaml-cpp             # consumed via utils/example_config_utils.hpp
-  # TODO: remove once MCAP pipeline validated.
-  # mav_flight_logger  # CSV logger backing unified_csv_logger.hpp
-  mav_flight_mcap      # MCAP logger backing unified_mcap_logger.hpp
+  mav_flight_review    # MCAP / CSV logger backing unified_mcap_logger.hpp
 )
 
 target_compile_features(mpc_examples_framework PUBLIC cxx_std_17)
@@ -52,7 +48,8 @@ target_compile_features(mpc_examples_framework PUBLIC cxx_std_17)
 # corresponding acados library only ends up in its own executable).
 # ---------------------------------------------------------------------------
 add_library(mpc_examples_controller_pid STATIC
-  src/controllers/pid_geometric_controller.cpp
+  src/controllers/pid_position_geometric_controller.cpp
+  src/controllers/pid_trajectory_geometric_controller.cpp
 )
 target_include_directories(mpc_examples_controller_pid PUBLIC ${_inc})
 target_link_libraries(mpc_examples_controller_pid PUBLIC
@@ -87,13 +84,14 @@ target_link_libraries(mpc_examples_controller_mpc_trajectory PUBLIC
 target_compile_features(mpc_examples_controller_mpc_trajectory PUBLIC cxx_std_17)
 
 # ---------------------------------------------------------------------------
-# Generators (all four bundled in a single STATIC; they have no ODR issues).
+# Generators (all five bundled in a single STATIC; they have no ODR issues).
 # ---------------------------------------------------------------------------
 add_library(mpc_examples_generators STATIC
   src/generators/waypoint_reference_generator.cpp
   src/generators/jerk_limited_generator.cpp
   src/generators/gcopter_generator.cpp
   src/generators/dynamic_trajectory_generator.cpp
+  src/generators/mav_traj_gen_generator.cpp
 )
 target_include_directories(mpc_examples_generators PUBLIC ${_inc})
 target_link_libraries(mpc_examples_generators PUBLIC
@@ -101,6 +99,7 @@ target_link_libraries(mpc_examples_generators PUBLIC
   trajectory_generator_jerk_limited
   gcopter_lib
   dynamic_trajectory_generator
+  mav_trajectory_generation_cpp
   mav_simulator
   yaml-cpp
 )

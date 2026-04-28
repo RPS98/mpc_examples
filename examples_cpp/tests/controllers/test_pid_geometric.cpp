@@ -7,27 +7,27 @@
 #include <string>
 #include <vector>
 
-#include "controllers/pid_geometric_controller.hpp"
+#include "controllers/pid_position_geometric_controller.hpp"
 #include "framework/controller_base.hpp"
 #include "test_helpers.hpp"
 
-using mpc_examples::adapters::PidGeometricController;
-using mpc_examples::testing::hoverStateAt;
+using mpc_examples::adapters::PidPositionGeometricController;
 using mpc_examples::testing::horizonAtPosition;
+using mpc_examples::testing::hoverStateAt;
 using mpc_examples::testing::loadTestSimConfig;
 using mpc_examples::testing::repoPath;
 
 class PidGeometricControllerTest : public ::testing::Test {
 protected:
-  mpc_examples::ExampleConfig  sim_cfg_ = loadTestSimConfig();
-  mav_model::State             state_   = hoverStateAt({0.0, 0.0, 10.0});
-  std::unique_ptr<PidGeometricController> ctrl_;
+  mpc_examples::ExampleConfig sim_cfg_ = loadTestSimConfig();
+  mav_model::State state_              = hoverStateAt({0.0, 0.0, 10.0});
+  std::unique_ptr<PidPositionGeometricController> ctrl_;
 
   void SetUp() override {
     // Loads the real controller YAML shipped under configs/controllers/.
-    auto cfg = PidGeometricController::loadConfigFromYaml(
-        repoPath("configs/controllers/config_pid.yaml"));
-    ctrl_ = std::make_unique<PidGeometricController>(cfg);
+    auto cfg =
+        PidPositionGeometricController::loadConfigFromYaml(repoPath("configs/controllers/config_pid.yaml"));
+    ctrl_ = std::make_unique<PidPositionGeometricController>(cfg);
     ctrl_->initialize(state_, sim_cfg_);
   }
 };
@@ -48,7 +48,7 @@ TEST_F(PidGeometricControllerTest, ProducesFiniteCommandOverBriefSimulation) {
 }
 
 TEST_F(PidGeometricControllerTest, RequiresAtLeastPositionReference) {
-  const auto mask  = ctrl_->requiredReferenceFields();
-  const auto pos   = mpc_examples::framework::ReferenceField::kPosition;
+  const auto mask = ctrl_->requiredReferenceFields();
+  const auto pos  = mpc_examples::framework::ReferenceField::kPosition;
   EXPECT_TRUE(mpc_examples::framework::hasField(mask, pos));
 }

@@ -7,7 +7,8 @@
 
 Each module mirrors one of the two C++ executables under ``examples_cpp``:
     - :mod:`examples_py.runs.run_position_examples`   (waypoints generator)
-    - :mod:`examples_py.runs.run_trajectory_examples` (gcopter / jerk_limited)
+    - :mod:`examples_py.runs.run_trajectory_examples`
+      (gcopter / jerk_limited / dynamic / mav_traj_gen)
 """
 
 __authors__ = 'Rafael Perez-Segui'

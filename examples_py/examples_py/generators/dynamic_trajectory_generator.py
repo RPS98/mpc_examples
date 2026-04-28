@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from dynamic_trajectory_generator_py import DynamicTrajectory
+from dynamic_trajectory_generator_py import _DynamicTrajectory as DynamicTrajectory
 from mavpy.model import State
 
 from examples_py.framework import (

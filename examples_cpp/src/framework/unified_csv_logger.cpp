@@ -10,9 +10,9 @@
 //       "framework/unified_mcap_logger.cpp". Body disabled via `#if 0`.
 #if 0
 
-#include "framework/unified_csv_logger.hpp"
+#  include "framework/unified_csv_logger.hpp"
 
-#include <array>
+#  include <array>
 
 namespace mpc_examples::framework {
 
