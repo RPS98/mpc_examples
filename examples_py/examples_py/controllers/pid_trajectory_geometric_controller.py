@@ -92,11 +92,11 @@ class PidTrajectoryGeometricController(IController):
     """Direct trajectory PID for smooth trajectory tracking (horizon size 1).
 
     Pipeline, executed once per control period:
-      1. trajectory PID: (state.pos, state.vel, ref.pos, ref.vel) -> acc_des
-         (parallel pos/vel feedback into a single PID; no acceleration feedforward)
+      1. trajectory PID: (state.pos, state.vel, ref.pos, ref.vel, ref.acc) -> acc_des
+         (parallel pos/vel feedback into a single PID, with acceleration feedforward)
       2. geometric:      (acc_des, ref.yaw, state.orientation) -> (thrust, rates)
 
-    Requires ReferenceField.POSITION | VELOCITY.
+    Requires ReferenceField.POSITION | VELOCITY | ACCELERATION.
     Suitable for smooth trajectory generators (jerk_limited, gcopter, dynamic,
     mav_traj_gen) and trajectory MPC.
     """
@@ -200,7 +200,7 @@ class PidTrajectoryGeometricController(IController):
             velocity,
             np.asarray(ref.position, dtype=float),
             np.asarray(ref.velocity, dtype=float),
-            np.zeros(3),
+            np.asarray(ref.acceleration, dtype=float),
             self._control_period)
 
         thrust, rates = self._geo_ctrl.acceleration_to_rates(
@@ -215,6 +215,7 @@ class PidTrajectoryGeometricController(IController):
         return make_mask([
             ReferenceField.POSITION,
             ReferenceField.VELOCITY,
+            ReferenceField.ACCELERATION,
         ])
 
     def name(self) -> str:

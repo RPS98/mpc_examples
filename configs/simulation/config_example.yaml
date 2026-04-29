@@ -1,15 +1,18 @@
 sim_config:
   # --- Simulation timing ------------------------------------------------------
-  sim_time: 30.0              # Total simulation time (s)
+  sim_time: 45.0              # Hard cap on simulated time (s). The run ends
+                              # at min(mission_end + hover_time, sim_time),
+                              # even if that truncates the hover phase or the
+                              # mission itself. Must be > 0.
   model_dt: 0.001             # Physics model timestep - 1000 Hz
   controller_dt: 0.002        # INDI + IMU update timestep - 500 Hz
   mpc_dt: 0.01                # MPC control timestep - 100 Hz
   pid_dt: 0.01                # PID control timestep - 100 Hz
 
   # --- Mission parameters -----------------------------------------------------
-  max_speed: 2.0              # m/s, used by generators and scheduler
-  hover_time: 10.0             # Seconds to hover after the last waypoint
-  settle_margin_s: 2.0        # Extra time added to every waypoint hop (stabilisation)
+  max_speed: 1.0              # m/s, used by generators and scheduler
+  hover_time: 10.0            # Seconds to hover after the last waypoint
+  settle_margin_s: 10.0        # Extra time added to every waypoint hop (stabilisation)
   path_facing: true
 
   # --- Logging / runtime ------------------------------------------------------
@@ -72,10 +75,5 @@ sim_config:
         controller_config: configs/controllers/config_pid_trajectory.yaml }
     - { controller: mpc_trajectory, generator: gcopter,      enabled: true }
     - { controller: mpc_trajectory, generator: jerk_limited, enabled: true }
-    # mpc_trajectory + dynamic prints FAILED in the run summary because the
-    # dynamic generator emits acceleration references that drive the acados
-    # QP into ACADOS_MINSTEP (status 4) under the default p2p config. The
-    # entry is kept enabled so the failure is visible in run_all and the
-    # single script remains operational for opt-in experiments.
     - { controller: mpc_trajectory, generator: dynamic,      enabled: true }
     - { controller: mpc_trajectory, generator: mav_traj_gen, enabled: true }

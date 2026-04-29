@@ -112,6 +112,24 @@ public:
 
   /** @return Wall-clock time of the last computeCommand() call [microseconds]. */
   virtual double lastSolveTimeMicros() const = 0;
+
+  /**
+   * @return Saturated velocity setpoint produced by the controller's outer
+   *         loop, if it computes one (e.g. cascaded position PID). Default
+   *         is the zero vector.
+   *
+   * Used by WaypointsSimulator to override the generator's velocity reference
+   * in the log when the controller's own intermediate setpoint is what the
+   * cascaded inner loop is actually tracking.
+   */
+  virtual Eigen::Vector3d lastVelocityCommand() const { return Eigen::Vector3d::Zero(); }
+
+  /**
+   * @return True iff lastVelocityCommand() returns a meaningful value that
+   *         should override the generator's velocity reference in the log.
+   *         Default: false (generator's velocity is logged as-is).
+   */
+  virtual bool providesVelocityCommand() const { return false; }
 };
 
 }  // namespace mpc_examples::framework

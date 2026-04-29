@@ -234,6 +234,9 @@ inline DelayMode parseDelayMode(const std::string& value, const std::string& pat
 }
 
 inline void validateDtDivisibility(const ExampleConfig& config) {
+  if (config.sim_time <= 0.0) {
+    throw std::invalid_argument("sim_config.sim_time must be greater than zero.");
+  }
   if (config.model_dt <= 0.0) {
     throw std::invalid_argument("sim_config.model_dt must be greater than zero.");
   }

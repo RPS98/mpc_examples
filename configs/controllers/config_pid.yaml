@@ -8,24 +8,33 @@
 # config_pid_trajectory.yaml instead — separate file with velocity
 # feedforward enabled and gains stiffened to keep up with the smooth
 # time-parameterised references emitted by those generators.
-
-v_max: 3.0           # Max velocity output from position PID (m/s)
+#
+# The position-PID velocity output is norm-saturated to
+# sim_config.max_speed (config_example.yaml) inside the controller; that
+# is the single source of truth for cruise speed and is therefore not
+# duplicated here.
 
 controller:
   position:
-    # Slightly faster than the legacy values (1.2/1.6) so the position loop
-    # closes the d_max-clamped error within one cruise window without leaving
-    # the saturated v_max region for as long, which is what caused the legacy
-    # tune to overshoot max_speed (~4 m/s peak) on the waypoint case.
-    kp: [1.4, 1.4, 1.7]
+    # Sized so kp * d_max ≈ max_speed (with d_max from config_waypoints.yaml,
+    # max_speed from config_example.yaml): at the maximum carrot offset the
+    # commanded velocity saturates exactly at the cruise limit, with no
+    # excess push that would build inertia past the waypoint. Anything
+    # larger sustains a surplus during the hop and produces overshoot at
+    # the destination; anything smaller never reaches max_speed.
+    kp: [0.5, 0.5, 0.7]
     ki: [0.0, 0.0, 0.0]
     kd: [0.0, 0.0, 0.0]
     antiwindup_cte: 1.0
     alpha: 0.2
   velocity:
+    # kd is the dominant brake when the position-PID releases its velocity
+    # command at the waypoint: it damps the residual velocity error during
+    # the final approach without slowing cruise (where the velocity error
+    # itself is small).
     kp: [1.6, 1.6, 2.0]
     ki: [0.0, 0.0, 0.0]
-    kd: [0.35, 0.35, 0.70]
+    kd: [1.2, 1.2, 1.8]
     antiwindup_cte: 0.4
     alpha: 0.1
     saturation_upper: [10.0, 10.0, 15.0]

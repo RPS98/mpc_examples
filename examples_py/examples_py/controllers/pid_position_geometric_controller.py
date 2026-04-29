@@ -57,7 +57,6 @@ class PidPositionGeometricConfig:
         default_factory=AttitudeGeometricControllerParameters)
     rates_params: RatesGeometricControllerParameters = field(
         default_factory=RatesGeometricControllerParameters)
-    v_max: float = 1.0
 
 
 def _read_vec3(node, name: str) -> np.ndarray:
@@ -104,7 +103,7 @@ class PidPositionGeometricController(IController):
 
     Pipeline, executed once per control period:
       1. position PID:   (state.position, ref.position) -> vel_des
-      2. saturate to ``v_max`` (direction preserved)
+      2. saturate to ``ExampleConfig.max_speed`` (direction preserved)
       3. velocity PID:   (state.velocity, vel_des) -> acc_des
       4. geometric:      (acc_des, ref.yaw, state.orientation) -> (thrust, rates)
 
@@ -113,14 +112,14 @@ class PidPositionGeometricController(IController):
     """
 
     def __init__(self, cfg: PidPositionGeometricConfig) -> None:
-        if cfg.v_max <= 0.0:
-            raise ValueError('PidPositionGeometricController: v_max must be > 0.')
         self._cfg = cfg
         self._pos_ctrl: Optional[PositionController] = None
         self._vel_ctrl: Optional[VelocityController] = None
         self._geo_ctrl: Optional[GeometricController] = None
         self._control_period = 0.01
+        self._v_max = 0.0
         self._last_solve_us = 0.0
+        self._last_vel_des = np.zeros(3, dtype=float)
         self._name = 'PidPositionGeometricController'
 
     @staticmethod
@@ -129,12 +128,16 @@ class PidPositionGeometricController(IController):
 
         Expected structure (config_pid.yaml)::
 
-            v_max: 3.0
             controller:
               position:  {kp, ki, kd, antiwindup_cte, alpha}
               velocity:  {kp, ki, kd, antiwindup_cte, alpha,
                           saturation_upper, saturation_lower}
               geometric: {mass, rotation_kp}
+
+        The post-position-PID velocity saturation magnitude is sourced from
+        ``ExampleConfig.max_speed`` in :meth:`initialize`; it is not a YAML
+        field of the controller config (single source of truth in
+        ``config_example.yaml``).
         """
         if not os.path.isfile(path):
             raise ValueError(f'Config file not found at {os.path.abspath(path)}.')
@@ -144,8 +147,6 @@ class PidPositionGeometricController(IController):
             raise ValueError('pid_position_geometric config: root must be a mapping.')
 
         cfg = PidPositionGeometricConfig()
-        if 'v_max' in root:
-            cfg.v_max = float(root['v_max'])
 
         ctrl = root.get('controller')
         if not isinstance(ctrl, dict):
@@ -176,6 +177,11 @@ class PidPositionGeometricController(IController):
         self._control_period = example_cfg.pid_dt
         if self._control_period <= 0.0:
             raise ValueError('PidPositionGeometricController: example_cfg.pid_dt must be > 0.')
+        if example_cfg.max_speed <= 0.0:
+            raise ValueError(
+                'PidPositionGeometricController: example_cfg.max_speed must be > 0 '
+                '(set in config_example.yaml).')
+        self._v_max = float(example_cfg.max_speed)
 
         pos_params = PositionControllerParameters()
         pos_params.pid_parameters = self._cfg.position_pid_params
@@ -219,7 +225,8 @@ class PidPositionGeometricController(IController):
         t0 = time.perf_counter()
         vel_des = self._pos_ctrl.position_to_linear_velocity(
             position, np.asarray(ref.position, dtype=float), self._control_period)
-        vel_des = _saturate_velocity(vel_des, self._cfg.v_max)
+        vel_des = _saturate_velocity(vel_des, self._v_max)
+        self._last_vel_des = np.asarray(vel_des, dtype=float).copy()
 
         acc_des = self._vel_ctrl.linear_velocity_to_linear_acceleration(
             velocity, vel_des, self._control_period)
@@ -240,3 +247,9 @@ class PidPositionGeometricController(IController):
 
     def last_solve_time_micros(self) -> float:
         return self._last_solve_us
+
+    def last_velocity_command(self) -> np.ndarray:
+        return self._last_vel_des
+
+    def provides_velocity_command(self) -> bool:
+        return True

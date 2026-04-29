@@ -11,7 +11,11 @@
 optimization:
   # Derivative order to minimise along the trajectory.
   # 0 = position, 1 = velocity, 2 = acceleration, 3 = jerk, 4 = snap.
-  derivative_to_optimize: 4
+  # Aligned with dynamic_trajectory_generator (hard-coded ACCELERATION = 2 in
+  # thirdparty/dynamic_trajectory_generator/include/dynamic_trajectory_generator/
+  # dynamic_trajectory.hpp:84) so both polynomial generators share the same
+  # cost target.
+  derivative_to_optimize: 2
 
   # Solver backend: "linear" (closed-form least squares; ignores velocity /
   # acceleration bounds) or "nonlinear" (NLopt-backed; enforces magnitude
@@ -20,8 +24,9 @@ optimization:
 
   # Maximum acceleration magnitude [m/s^2]. Drives segment-time allocation
   # under "linear" and acts as the active acceleration upper bound under
-  # "nonlinear".
-  a_max: 4.0
+  # "nonlinear". Aligned with dynamic_trajectory_generator's hard-coded
+  # MAV_MAX_ACCEL = 1.0 * 9.81 (dynamic_trajectory.hpp:24,94).
+  a_max: 9.81
 
   # NLopt knobs (only used when solver == "nonlinear"). Defaults below match
   # the library's tuning for MAV trajectories.

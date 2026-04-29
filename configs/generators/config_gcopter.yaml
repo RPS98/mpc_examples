@@ -19,6 +19,14 @@ drone_limits:
   min_thrust: 0.1             # [N]
   max_thrust: 40.0            # [N]
 
+# GCOPTER is min-jerk by design: cost = MINCO_energy + Σ penalty + rho*Σtimes
+# (see thirdparty/gcopter_lib/.../gcopter.hpp::costFunctional). The output is
+# always a smooth bell-shaped velocity profile that touches max_speed at the
+# crest, NEVER a sustained plateau. Empirically (2026-04-28 sweep) raising
+# time_weight from 20 to 500 or stretching segments to 30 m moves the profile
+# by <8 %; the bottleneck is body-rate / tilt / thrust penalties, not rho.
+# If a flat-top cruise is needed, use the jerk_limited generator instead.
+# Do not retune these weights expecting plateau — see CLAUDE.md "Gotchas".
 optimization:
   time_weight: 20.0            # rho
   position_weight: 1.0e+4

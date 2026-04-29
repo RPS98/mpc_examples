@@ -198,7 +198,10 @@ class WaypointsSimulator:
         outer_dt = self._controller.control_period()
         hover_time = self._example_cfg.hover_time
         mission_end_t = scheduler.final_time()
-        max_sim_time = mission_end_t + hover_time
+        # sim_config.sim_time is a hard cap on the wall of simulated time:
+        # the run ends at min(mission_end + hover, sim_time), even if that
+        # truncates the hover phase or the mission itself.
+        max_sim_time = min(mission_end_t + hover_time, self._example_cfg.sim_time)
         benchmark = self._example_cfg.benchmark
         silent = self._example_cfg.silent
         max_speed = self._example_cfg.max_speed
@@ -302,7 +305,6 @@ class WaypointsSimulator:
                 eval_time_us=gen_eval_s * 1e6,
                 delay_applied_us=gen_delay_s * 1e6,
             )
-            ref_buffer.push(ref_payload, t + gen_delay_s)
 
             # Controller step ----------------------------------------------
             ctrl_t0 = time.perf_counter()
@@ -313,6 +315,17 @@ class WaypointsSimulator:
 
             ctrl_delay_s = _resolve_delay(
                 ctrl_delay_mode, ctrl_solve_s, ctrl_delay_fixed)
+
+            # If the controller produces an intermediate velocity setpoint
+            # (e.g. cascaded Position-PID), publish it on the
+            # /drone0/motion_reference/twist topic by overriding the
+            # generator's velocity slot before the buffer push. The sim-time
+            # delay applied to the reference is unchanged.
+            if self._controller.provides_velocity_command():
+                ref_payload.sample.velocity = np.asarray(
+                    self._controller.last_velocity_command(),
+                    dtype=float).copy()
+            ref_buffer.push(ref_payload, t + gen_delay_s)
 
             cmd_payload = _TimedCommand(
                 cmd=cmd,

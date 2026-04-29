@@ -15,10 +15,15 @@ v_max: 3.0
 
 controller:
   trajectory:
-    # Trajectory PID gains: parallel pos/vel feedback → acceleration output
-    kp: [10.0, 10.0, 10.0]
+    # Trajectory PID gains: parallel pos/vel feedback → acceleration output.
+    # With acceleration feedforward enabled (ref.acceleration is summed in by
+    # TrajectoryController::trajectoryToLinearAcceleration), the proportional
+    # term no longer has to synthesise the acceleration profile from scratch,
+    # so kp is conservative — just enough to close steady tracking lag without
+    # amplifying it into velocity overshoot when the reference reaches v_max.
+    kp: [3.0, 3.0, 3.0]
     ki: [0.005, 0.005, 0.005]
-    kd: [6.0, 6.0, 6.0]
+    kd: [4.0, 4.0, 4.0]
     antiwindup_cte: 1.0
     alpha: 0.6
     # Per-axis symmetric output saturation [m/s²]. Optional — leave unset to

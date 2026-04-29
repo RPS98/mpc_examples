@@ -3,18 +3,17 @@
 # Copyright 2025 Universidad Politécnica de Madrid
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Dynamic (async restitching) trajectory adapter (point-to-point API).
+"""Dynamic trajectory adapter (point-to-point, fresh-segment API).
 
 Python mirror of
-``examples/adapters/trajectory_generators/dynamic/src/dynamic_trajectory_generator.cpp``.
+``examples_cpp/src/generators/dynamic_trajectory_generator.cpp``.
 
-The pybind11 binding exposes a narrower API than the C++ library — only
-``generate_trajectory``/``evaluate_trajectory``/``get_min_time``/
-``get_max_time``/``set_path_facing``/``get_was_trajectory_regenerated``. In
-particular, ``updateVehiclePosition`` and ``setWaypoints`` are **not**
-exposed, so each call to :meth:`on_waypoint_changed` reseeds the trajectory
-via :func:`DynamicTrajectory.generate_trajectory` from the current vehicle
-state to the new waypoint.
+Each call to :meth:`on_waypoint_changed` **destroys and reconstructs** the
+underlying ``DynamicTrajectory`` instance and generates a new segment from
+the current vehicle position to the new waypoint, with its own internal
+time origin. Times are then evaluated relative to the segment start
+(``_t_segment_start``), matching the convention used by the gcopter and
+mav_traj_gen adapters.
 """
 
 __authors__ = 'Rafael Perez-Segui'
@@ -91,8 +90,9 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
         self._has_prev_t = False
         self._prev_t = 0.0
         self._yaw_ref_hold = 0.0
-        self._t_min = 0.0
-        self._t_max = 0.0
+        self._t_segment_start = 0.0  # sim time at which the active segment began
+        self._t_min = 0.0  # sim time, = _t_segment_start
+        self._t_max = 0.0  # sim time, = _t_segment_start + T_seg
         self._has_plan = False
         self._segment_completed = False
         self._hold_pos = np.zeros(3, dtype=float)
@@ -121,15 +121,16 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
 
         self._hold_pos = np.asarray(initial_state.position, dtype=float).copy()
         self._target_wp = self._hold_pos.copy()
+        self._t_segment_start = 0.0
         self._t_min = 0.0
         self._t_max = 0.0
         self._has_plan = False
         self._segment_completed = False
 
-        self._traj = DynamicTrajectory()
-        # The binding applies its own yaw internally; disable it and reuse the
-        # same rate-limited path-facing policy as the other adapters.
-        self._traj.set_path_facing(False)
+        # Drop any previous instance so the next on_waypoint_changed() starts
+        # from a clean state (matters when the same adapter is reused across
+        # runs). The instance is rebuilt per segment in on_waypoint_changed().
+        self._traj = None
 
         self._last_sample = ReferenceSample(
             position=self._hold_pos.copy(),
@@ -141,22 +142,26 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
     def on_waypoint_changed(
         self, next_waypoint: np.ndarray, state: State, t_start: float,
     ) -> None:
-        del t_start
-        if self._traj is None:
-            raise RuntimeError(
-                'DynamicTrajectoryGenerator: initialize() must be called '
-                'before on_waypoint_changed().')
-
         p0 = np.asarray(state.position, dtype=float)
         self._target_wp = np.asarray(next_waypoint, dtype=float).copy()
         self._hold_pos = self._target_wp.copy()
+        self._t_segment_start = float(t_start)
         self._segment_completed = False
 
         if float(np.linalg.norm(self._target_wp - p0)) < _MIN_SEGMENT_LENGTH:
             self._has_plan = False
-            self._t_min = 0.0
-            self._t_max = 0.0
+            self._t_min = self._t_segment_start
+            self._t_max = self._t_segment_start
             return
+
+        # Recreate the underlying instance on every segment so the new
+        # trajectory is generated from scratch with a fresh internal time
+        # origin (no stitching onto the previous segment, no carry-over of
+        # last_global_time_evaluated).
+        self._traj = DynamicTrajectory()
+        # The binding applies its own yaw internally; disable it and reuse
+        # the same rate-limited path-facing policy as the other adapters.
+        self._traj.set_path_facing(False)
 
         try:
             self._traj.generate_trajectory(
@@ -165,13 +170,16 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
                 [p0.copy(), self._target_wp.copy()],
                 float(self._max_speed),
             )
-            self._t_min = float(self._traj.get_min_time())
-            self._t_max = float(self._traj.get_max_time())
+            # With a brand-new instance, get_min_time()/get_max_time() are
+            # local times in [0, T_seg]. Map them into sim time using
+            # _t_segment_start as the origin.
+            self._t_min = self._t_segment_start + float(self._traj.get_min_time())
+            self._t_max = self._t_segment_start + float(self._traj.get_max_time())
             self._has_plan = True
         except Exception:  # noqa: BLE001 — binding raises on optimiser failure
             self._has_plan = False
-            self._t_min = 0.0
-            self._t_max = 0.0
+            self._t_min = self._t_segment_start
+            self._t_max = self._t_segment_start
 
     def _evaluate_sample(self, t_eval: float) -> Optional[ReferenceSample]:
         if self._traj is None:
@@ -188,29 +196,18 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
         return ReferenceSample(position=pos, velocity=vel, acceleration=acc)
 
     def update(self, t: float, state: State) -> None:
-        del state
-        if self._traj is None:
-            raise RuntimeError(
-                'DynamicTrajectoryGenerator: initialize() must be called before update().')
+        del state  # The current pose is not fed back: each segment is an
+                   # independent open-loop polynomial (see on_waypoint_changed()).
 
         dt = max(t - self._prev_t, 0.0) if self._has_prev_t else 0.0
         self._prev_t = t
         self._has_prev_t = True
 
-        # Keep internal bounds fresh only while within the planned window;
-        # past t_max switch to a static setpoint and ignore further library
-        # state — otherwise asynchronous restitching can push the reference
-        # velocity/acceleration out of bounds during hover.
-        if self._has_plan and not self._segment_completed:
-            try:
-                self._t_max = float(self._traj.get_max_time())
-            except Exception:  # noqa: BLE001
-                pass
-
         if (self._has_plan and not self._segment_completed
                 and self._t_min <= t <= self._t_max):
-            t_eval = min(max(t, self._t_min), self._t_max)
-            sample = self._evaluate_sample(t_eval)
+            t_local = min(max(t - self._t_segment_start, 0.0),
+                          self._t_max - self._t_segment_start)
+            sample = self._evaluate_sample(t_local)
             if sample is not None:
                 self._last_sample.position = sample.position
                 self._last_sample.velocity = sample.velocity
@@ -258,8 +255,9 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
             return out
         if t < self._t_min:
             return out
-        t_eval = min(max(t, self._t_min), self._t_max)
-        sample = self._evaluate_sample(t_eval)
+        t_local = min(max(t - self._t_segment_start, 0.0),
+                      self._t_max - self._t_segment_start)
+        sample = self._evaluate_sample(t_local)
         if sample is not None:
             out.position = sample.position
             out.velocity = sample.velocity

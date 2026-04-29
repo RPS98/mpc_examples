@@ -65,20 +65,12 @@ pid_controller::PIDParameters<double> parsePidParameters(const YAML::Node& node,
 
 }  // namespace
 
-PidPositionGeometricController::PidPositionGeometricController(const Config& cfg) : cfg_(cfg) {
-  if (cfg_.v_max <= 0.0) {
-    throw std::invalid_argument("PidPositionGeometricController: v_max must be > 0.");
-  }
-}
+PidPositionGeometricController::PidPositionGeometricController(const Config& cfg) : cfg_(cfg) {}
 
 PidPositionGeometricController::Config PidPositionGeometricController::loadConfigFromYaml(
     const std::string& path) {
   const YAML::Node root = detail::loadYamlRoot(path);
   Config cfg;
-
-  if (root["v_max"]) {
-    cfg.v_max = detail::readDoubleRequired(root["v_max"], "v_max");
-  }
 
   const YAML::Node ctrl = root["controller"];
   if (!ctrl || !ctrl.IsMap()) {
@@ -123,6 +115,12 @@ void PidPositionGeometricController::initialize(const mav_model::State& /*initia
   if (control_period_ <= 0.0) {
     throw std::invalid_argument("PidPositionGeometricController: example_cfg.pid_dt must be > 0.");
   }
+  if (example_cfg.max_speed <= 0.0) {
+    throw std::invalid_argument(
+        "PidPositionGeometricController: example_cfg.max_speed must be > 0 "
+        "(set in config_example.yaml).");
+  }
+  v_max_ = example_cfg.max_speed;
 
   pid_controllers::PositionControllerParameters<double> pos_params;
   pos_params.pid_parameters = cfg_.position_pid_params;
@@ -152,7 +150,8 @@ framework::ControlCommand PidPositionGeometricController::computeCommand(
 
   Eigen::Vector3d vel_des =
       pos_ctrl_->positionToLinearVelocity(position, ref.position, control_period_);
-  vel_des = saturateVelocity(vel_des, cfg_.v_max);
+  vel_des       = saturateVelocity(vel_des, v_max_);
+  last_vel_des_ = vel_des;
 
   const Eigen::Vector3d acc_des =
       vel_ctrl_->linearVelocityToLinearAcceleration(velocity, vel_des, control_period_);

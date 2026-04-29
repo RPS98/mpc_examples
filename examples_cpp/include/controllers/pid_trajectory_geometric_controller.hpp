@@ -38,11 +38,11 @@ namespace mpc_examples::adapters {
  * @brief Direct trajectory PID for smooth trajectory tracking (horizon size == 1).
  *
  * Pipeline, executed once per control period:
- *   1. trajectory PID: (state.pos, state.vel, ref.pos, ref.vel) → acc_des
- *      (parallel pos/vel feedback into a single PID; no acceleration feedforward)
+ *   1. trajectory PID: (state.pos, state.vel, ref.pos, ref.vel, ref.acc) → acc_des
+ *      (parallel pos/vel feedback into a single PID, with acceleration feedforward)
  *   2. geometric:      (acc_des, ref.yaw, state.orientation)    → (thrust, rates)
  *
- * Requires ReferenceField::kPosition | kVelocity.
+ * Requires ReferenceField::kPosition | kVelocity | kAcceleration.
  * Suitable for smooth trajectory generators (gcopter, jerk_limited, dynamic,
  * mav_traj_gen) and trajectory MPC.
  */
@@ -81,8 +81,9 @@ public:
       const std::vector<framework::ReferenceSample>& references) override;
 
   framework::ReferenceFieldMask requiredReferenceFields() const override {
-    return framework::makeMask(
-        {framework::ReferenceField::kPosition, framework::ReferenceField::kVelocity});
+    return framework::makeMask({framework::ReferenceField::kPosition,
+                                framework::ReferenceField::kVelocity,
+                                framework::ReferenceField::kAcceleration});
   }
 
   const std::string& name() const override { return name_; }

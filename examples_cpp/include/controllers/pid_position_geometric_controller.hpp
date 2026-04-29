@@ -35,7 +35,7 @@ namespace mpc_examples::adapters {
  *
  * Pipeline, executed once per control period:
  *   1. position PID:   (state.position, ref.position)        → vel_des
- *   2. saturate to v_max (preserves direction)
+ *   2. saturate to ExampleConfig::max_speed (preserves direction)
  *   3. velocity PID:   (state.velocity, vel_des)             → acc_des
  *   4. geometric:      (acc_des, ref.yaw, state.orientation) → (thrust, rates)
  *
@@ -49,7 +49,6 @@ public:
     pid_controller::PIDParameters<double> velocity_pid_params;
     geometric_controller::AttitudeGeometricControllerParameters<double> attitude_params;
     geometric_controller::RatesGeometricControllerParameters<double> rates_params;
-    double v_max = 1.0;  //!< Saturation applied to the position-PID velocity output [m/s].
   };
 
   explicit PidPositionGeometricController(const Config& cfg);
@@ -59,13 +58,16 @@ public:
    *
    * Expected structure (config_pid.yaml):
    * @code
-   * v_max: 3.0
    * controller:
    *   position:  {kp, ki, kd, antiwindup_cte, alpha}
    *   velocity:  {kp, ki, kd, antiwindup_cte, alpha,
    *               saturation_upper, saturation_lower}
    *   geometric: {mass, rotation_kp}
    * @endcode
+   *
+   * The post-position-PID velocity saturation magnitude is sourced from
+   * ExampleConfig::max_speed in initialize(); it is not a YAML field of the
+   * controller config (single source of truth in config_example.yaml).
    */
   static Config loadConfigFromYaml(const std::string& path);
 
@@ -86,6 +88,12 @@ public:
   const std::string& name() const override { return name_; }
   double lastSolveTimeMicros() const override { return last_solve_us_; }
 
+  /// Saturated velocity setpoint produced by the position PID, fed to the
+  /// inner velocity PID. Logged on /drone0/motion_reference/twist by the
+  /// simulator since the waypoint generator does not produce velocity.
+  Eigen::Vector3d lastVelocityCommand() const override { return last_vel_des_; }
+  bool providesVelocityCommand() const override { return true; }
+
 private:
   Config cfg_;
   std::unique_ptr<pid_controllers::PositionController<double>> pos_ctrl_;
@@ -93,8 +101,11 @@ private:
   std::unique_ptr<geometric_controller::GeometricController<double>> geo_ctrl_;
 
   double control_period_ = 0.01;
+  double v_max_          = 0.0;  //!< [m/s] sourced from ExampleConfig::max_speed.
   double last_solve_us_  = 0.0;
-  std::string name_      = "PidPositionGeometricController";
+  Eigen::Vector3d last_vel_des_ =
+      Eigen::Vector3d::Zero();  //!< Saturated position-PID output [m/s].
+  std::string name_ = "PidPositionGeometricController";
 };
 
 }  // namespace mpc_examples::adapters

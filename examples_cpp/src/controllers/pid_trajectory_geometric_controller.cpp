@@ -134,7 +134,7 @@ framework::ControlCommand PidTrajectoryGeometricController::computeCommand(
   const auto t0 = std::chrono::high_resolution_clock::now();
 
   const Eigen::Vector3d acc_des = traj_ctrl_->trajectoryToLinearAcceleration(
-      position, velocity, ref.position, ref.velocity, Eigen::Vector3d::Zero(), control_period_);
+      position, velocity, ref.position, ref.velocity, ref.acceleration, control_period_);
 
   const auto [thrust, rates] = geo_ctrl_->accelerationToRates(acc_des, ref.yaw, orientation);
 

@@ -142,10 +142,13 @@ void WaypointsSimulator::run() {
   const double outer_dt      = controller_->controlPeriod();
   const double hover_time    = example_cfg_.hover_time;
   const double mission_end_t = scheduler.finalTime();
-  const double max_sim_time  = mission_end_t + hover_time;
-  const bool benchmark       = example_cfg_.benchmark;
-  const bool silent          = example_cfg_.silent;
-  const double max_speed     = example_cfg_.max_speed;
+  // sim_config.sim_time is a hard cap on the wall of simulated time: the run
+  // ends at min(mission_end + hover, sim_time), even if that truncates the
+  // hover phase or the mission itself.
+  const double max_sim_time = std::min(mission_end_t + hover_time, example_cfg_.sim_time);
+  const bool benchmark      = example_cfg_.benchmark;
+  const bool silent         = example_cfg_.silent;
+  const double max_speed    = example_cfg_.max_speed;
 
   const int N_samples = controller_->referenceHorizonSize();
   const double dt_h   = controller_->referenceHorizonDt();
@@ -264,7 +267,6 @@ void WaypointsSimulator::run() {
     ref_payload.update_time_us   = gen_update_s * 1e6;
     ref_payload.eval_time_us     = gen_eval_s * 1e6;
     ref_payload.delay_applied_us = gen_delay_s * 1e6;
-    ref_buffer.push(ref_payload, t + gen_delay_s);
 
     // --- Controller step (measure wall-clock) ------------------------------
     const auto ctrl_t0        = Clock::now();
@@ -275,6 +277,15 @@ void WaypointsSimulator::run() {
 
     const double ctrl_delay_s = resolveDelay(example_cfg_.controller_delay_mode, ctrl_solve_s,
                                              example_cfg_.controller_delay_fixed_s);
+
+    // If the controller produces an intermediate velocity setpoint (e.g. the
+    // cascaded Position-PID), publish it on /drone0/motion_reference/twist by
+    // overriding the generator's velocity slot before the buffer push. The
+    // sim-time delay applied to the reference is unchanged.
+    if (controller_->providesVelocityCommand()) {
+      ref_payload.sample.velocity = controller_->lastVelocityCommand();
+    }
+    ref_buffer.push(ref_payload, t + gen_delay_s);
 
     TimedCommand cmd_payload;
     cmd_payload.cmd              = cmd;

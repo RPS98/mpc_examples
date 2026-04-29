@@ -7,11 +7,11 @@
  * Reference generator that wraps dynamic_traj_generator::DynamicTrajectory.
  *
  * Point-to-point contract: the scheduler calls onWaypointChanged() with the
- * next target; at each transition, the underlying library is reseeded with a
- * two-waypoint path [current_pos, next_waypoint] and re-optimises in its own
- * thread. The library uses an absolute time base internally, so
- * onWaypointChanged() records the segment's t_min/t_max once the first
- * optimisation completes.
+ * next target; at each transition, the underlying library instance is
+ * destroyed and reconstructed so that the new segment is generated from
+ * scratch with a fresh internal time origin. Time is then evaluated relative
+ * to the segment start (t_segment_start_), matching the convention used by
+ * the gcopter and mav_traj_gen adapters.
  *
  * @author Rafael Perez-Segui <r.psegui@upm.es>
  */
@@ -68,8 +68,9 @@ private:
   double max_speed_          = 0.0;
   Eigen::Vector3d target_wp_ = Eigen::Vector3d::Zero();
   Eigen::Vector3d hold_pos_  = Eigen::Vector3d::Zero();
-  double t_min_              = 0.0;
-  double t_max_              = 0.0;
+  double t_segment_start_    = 0.0;  // sim time at which the active segment began
+  double t_min_              = 0.0;  // sim time, = t_segment_start_
+  double t_max_              = 0.0;  // sim time, = t_segment_start_ + T_seg
   bool has_plan_             = false;
   bool segment_completed_    = false;
   bool path_facing_          = true;

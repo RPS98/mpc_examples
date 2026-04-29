@@ -126,6 +126,8 @@ def _parse_delay_mode(value: str, path: str) -> DelayMode:
 
 
 def _validate_dt_divisibility(cfg: ExampleConfig) -> None:
+    if cfg.sim_time <= 0.0:
+        raise ValueError('sim_config.sim_time must be greater than zero.')
     if cfg.model_dt <= 0.0:
         raise ValueError('sim_config.model_dt must be greater than zero.')
     if cfg.controller_dt <= 0.0:

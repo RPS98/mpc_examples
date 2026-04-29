@@ -83,14 +83,15 @@ void DynamicTrajectoryGenerator::initialize(const mav_model::State& initial_stat
 
   hold_pos_          = initial_state.getPositionVector();
   target_wp_         = hold_pos_;
+  t_segment_start_   = 0.0;
   t_min_             = 0.0;
   t_max_             = 0.0;
   has_plan_          = false;
   segment_completed_ = false;
 
-  traj_ = std::make_unique<dynamic_traj_generator::DynamicTrajectory>();
-  traj_->updateVehiclePosition(hold_pos_);
-  traj_->setSpeed(max_speed_);
+  // Drop any previous instance so the next onWaypointChanged() starts from a
+  // clean state (matters when the same adapter is reused across runs).
+  traj_.reset();
 
   last_sample_.position     = hold_pos_;
   last_sample_.velocity     = Eigen::Vector3d::Zero();
@@ -100,55 +101,49 @@ void DynamicTrajectoryGenerator::initialize(const mav_model::State& initial_stat
 
 void DynamicTrajectoryGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
                                                    const mav_model::State& state,
-                                                   double /*t_start*/) {
+                                                   double t_start) {
   const Eigen::Vector3d p0 = state.getPositionVector();
   target_wp_               = next_waypoint;
   hold_pos_                = next_waypoint;
+  t_segment_start_         = t_start;
 
   segment_completed_ = false;
 
   if ((next_waypoint - p0).norm() < 1e-6) {
     has_plan_ = false;
-    t_min_    = 0.0;
-    t_max_    = 0.0;
+    t_min_    = t_start;
+    t_max_    = t_start;
     return;
   }
 
+  // Recreate the underlying instance on every segment so the new trajectory
+  // is generated from scratch with a fresh internal time origin (no stitching
+  // onto the previous segment, no carry-over of last_global_time_evaluated).
+  traj_ = std::make_unique<dynamic_traj_generator::DynamicTrajectory>();
+  traj_->setSpeed(max_speed_);
   traj_->updateVehiclePosition(p0);
   traj_->setWaypoints(makeSegmentWaypoints(p0, next_waypoint));
 
-  // The library exposes absolute (global) time bounds; blocks until the first
-  // optimisation run finishes.
-  t_min_    = traj_->getMinTime();
-  t_max_    = traj_->getMaxTime();
+  // With a brand-new instance, getMinTime()/getMaxTime() are local times in
+  // [0, T_seg]. Map them into sim time using t_segment_start_ as the origin.
+  // Both calls block until the first optimisation run completes.
+  t_min_    = t_start + traj_->getMinTime();
+  t_max_    = t_start + traj_->getMaxTime();
   has_plan_ = true;
 }
 
 void DynamicTrajectoryGenerator::update(double t, const mav_model::State& state) {
-  if (!traj_) {
-    throw std::runtime_error(
-        "DynamicTrajectoryGenerator: initialize() must be called before update().");
-  }
+  (void)state;  // The current pose is not fed back: each segment is an
+                // independent open-loop polynomial (see onWaypointChanged()).
 
   const double dt = has_prev_t_ ? std::max(t - prev_t_, 0.0) : 0.0;
   prev_t_         = t;
   has_prev_t_     = true;
 
-  const Eigen::Vector3d position = state.getPositionVector();
-  traj_->updateVehiclePosition(position);
-
-  // Keep internal bounds fresh only while we're still within the planned
-  // window. Once we've crossed t_max_, we switch to a static setpoint and
-  // ignore further library state — otherwise asynchronous restitching can
-  // push the reference velocity/acceleration out of bounds during hover.
-  if (has_plan_ && !segment_completed_) {
-    t_max_ = traj_->getMaxTime();
-  }
-
   if (has_plan_ && !segment_completed_ && t >= t_min_ && t <= t_max_) {
-    const double t_eval = std::clamp(t, t_min_, t_max_);
+    const double t_local = std::clamp(t - t_segment_start_, 0.0, t_max_ - t_segment_start_);
     dynamic_traj_generator::References refs;
-    if (traj_->evaluateTrajectory(static_cast<float>(t_eval), refs) && isFiniteRefs(refs)) {
+    if (traj_->evaluateTrajectory(static_cast<float>(t_local), refs) && isFiniteRefs(refs)) {
       last_sample_.position     = refs.position;
       last_sample_.velocity     = refs.velocity;
       last_sample_.acceleration = refs.acceleration;
@@ -199,9 +194,9 @@ framework::ReferenceSample DynamicTrajectoryGenerator::evaluate(double t) const 
   if (t < t_min_) {
     return sample;
   }
-  const double t_eval = std::clamp(t, t_min_, t_max_);
+  const double t_local = std::clamp(t - t_segment_start_, 0.0, t_max_ - t_segment_start_);
   dynamic_traj_generator::References refs;
-  if (traj_->evaluateTrajectory(static_cast<float>(t_eval), refs) && isFiniteRefs(refs)) {
+  if (traj_->evaluateTrajectory(static_cast<float>(t_local), refs) && isFiniteRefs(refs)) {
     sample.position     = refs.position;
     sample.velocity     = refs.velocity;
     sample.acceleration = refs.acceleration;
