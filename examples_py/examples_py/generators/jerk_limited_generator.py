@@ -149,8 +149,8 @@ class JerkLimitedGenerator(ITrajectoryGenerator):
             return
 
         # Two-waypoint hop. Same arrange-from-rest constraint as the rest
-        # of p2p adapters (gcopter, dynamic, mav_traj_gen): the scheduler
-        # settle margin absorbs the v0 discontinuity at segment boundaries.
+        # of p2p adapters (gcopter, dynamic): the scheduler settle margin
+        # absorbs the v0 discontinuity at segment boundaries.
         wps = [Waypoint(p0), EndWaypoint(next_wp)]
         self._has_plan = bool(self._ctrl.generate(wps, self._max_speed))
         if not self._has_plan:

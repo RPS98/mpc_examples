@@ -15,7 +15,8 @@ namespace mpc_examples::framework {
 void WaypointScheduler::initialize(const std::vector<Eigen::Vector3d>& waypoints,
                                    const Eigen::Vector3d& initial_position,
                                    const double max_speed,
-                                   const double settle_margin_s) {
+                                   const double settle_margin_s,
+                                   const double scheduler_speed_factor) {
   if (waypoints.empty()) {
     throw std::invalid_argument("WaypointScheduler: waypoints must not be empty.");
   }
@@ -25,6 +26,9 @@ void WaypointScheduler::initialize(const std::vector<Eigen::Vector3d>& waypoints
   if (settle_margin_s < 0.0) {
     throw std::invalid_argument("WaypointScheduler: settle_margin_s must be >= 0.");
   }
+  if (scheduler_speed_factor <= 0.0 || scheduler_speed_factor > 1.0) {
+    throw std::invalid_argument("WaypointScheduler: scheduler_speed_factor must lie in (0, 1].");
+  }
 
   waypoints_    = waypoints;
   active_index_ = 0;
@@ -32,11 +36,12 @@ void WaypointScheduler::initialize(const std::vector<Eigen::Vector3d>& waypoints
   switch_times_.reserve(waypoints.size());
 
   // First hop: from initial_position to waypoints[0].
-  Eigen::Vector3d previous = initial_position;
-  double t_cumulative      = 0.0;
+  const double effective_speed = max_speed * scheduler_speed_factor;
+  Eigen::Vector3d previous     = initial_position;
+  double t_cumulative          = 0.0;
   for (std::size_t i = 0; i < waypoints.size(); ++i) {
     const double distance = (waypoints[i] - previous).norm();
-    t_cumulative += distance / max_speed + settle_margin_s;
+    t_cumulative += distance / effective_speed + settle_margin_s;
     switch_times_.push_back(t_cumulative);
     previous = waypoints[i];
   }

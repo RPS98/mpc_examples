@@ -15,28 +15,40 @@ v_max: 3.0
 
 controller:
   trajectory:
-    # Trajectory PID gains: parallel pos/vel feedback → acceleration output.
-    # With acceleration feedforward enabled (ref.acceleration is summed in by
-    # TrajectoryController::trajectoryToLinearAcceleration), the proportional
-    # term no longer has to synthesise the acceleration profile from scratch,
-    # so kp is conservative — just enough to close steady tracking lag without
-    # amplifying it into velocity overshoot when the reference reaches v_max.
-    # 2026-04-30 sweep over the 4 generators (jerk_limited, gcopter, dynamic,
-    # mav_traj_gen) showed that kp = 3 is the right floor: kp = 6 inflates
-    # overshoot ×3-12 with no RMSE benefit (RMSE dominated by the trajectory
-    # shape, not the tracker). Z is bumped to 3.5 / 4.5 / 0.01 to tighten the
-    # 10 m takeoff and the −5 m descent without affecting horizontal hops.
-    kp: [3.0, 3.0, 3.5]
-    ki: [0.005, 0.005, 0.01]
-    kd: [4.0, 4.0, 4.5]
-    antiwindup_cte: 1.0
-    alpha: 0.6
-    # Per-axis symmetric output saturation [m/s²]. Optional — leave unset to
-    # disable. Physical reference: max_thrust/mass ≈ 21.9 m/s²; gravity = 9.81 m/s².
-    # Diagonal worst-case (two axes simultaneous): a_max ≤ 9.81 to stay < 25 N max.
-    # Typical starting point: 10.0. Increase if the controller under-drives recovery.
-    # a_max: 10.0
+    # Stability-first tuning (2026-04-30 sweep). The previous
+    # [3, 3, 3.5] / [4, 4, 4.5] tuning produced visible ripple in vx
+    # (~1-2 Hz, ±0.2 m/s) and ||v|| peaks of 1.55-1.6 m/s on the
+    # jerk_limited plateau. Root cause: kd here is a velocity-error
+    # feedback gain — TrajectoryController::trajectoryToLinearAcceleration
+    # passes velocity_error as the "derivative input" to the PID, so
+    # any velocity noise of ±0.2 m/s injects ±0.8 m/s² into the
+    # acceleration command. Halving kd (4→2 → 1.5 final) and lowering
+    # kp (3→2 final) trades position-loop bandwidth for plateau
+    # cleanliness. alpha 0.6→0.2 strengthens the derivative low-pass.
+    # ki = 0: the long-segment wind-up was the third source of overshoot
+    # observed; with parallel pos+vel feedback and a_ref feedforward
+    # the integral term is unnecessary. RMSE penalty is negligible.
+    kp: [2.0, 2.0, 2.5]
+    ki: [0.0, 0.0, 0.0]
+    kd: [1.5, 1.5, 1.8]
+    antiwindup_cte: 0.5
+    alpha: 0.2
+    # Output saturation. 5.0 m/s² leaves margin against the 21.9 m/s²
+    # thrust ceiling (max_thrust/mass) and the 9.81 m/s² diagonal
+    # worst-case. Tighter values (3.5) starved gcopter at the final
+    # 13.7 m segment (the bell-curve braking phase requires sustained
+    # accel and produced a 1.4 m/s spike at t≈90 s). Looser values
+    # (8.0) inflated the jerk_limited plateau-entry overshoot. 5.0 is
+    # the sweet spot from the 2026-04-30 iterative sweep.
+    a_max: 5.0
   geometric:
     mass: 1.140
-    # Faster attitude response for combined diagonal hops.
-    rotation_kp: [5.0, 5.0, 3.0]
+    # The previous [5, 5, 3] tuning combined with the stiffer
+    # trajectory PID injected ripple via the inner attitude loop.
+    # Dropping horizontal to 4.5 (and keeping vertical at 3.0) reduces
+    # that coupling without compromising the gcopter +Y far → −Z far
+    # waypoint switch at t≈53 s, where an even softer rotation_kp
+    # (4.0/2.5) had produced a 3.4 m/s lateral ||v|| spike from
+    # residual lateral tilt while the attitude loop chased the new
+    # vertical acceleration command.
+    rotation_kp: [4.5, 4.5, 3.0]

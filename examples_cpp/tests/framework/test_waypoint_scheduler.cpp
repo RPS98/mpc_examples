@@ -74,6 +74,48 @@ TEST(WaypointSchedulerTest, RejectsInvalidInputs) {
                std::invalid_argument);
   EXPECT_THROW(scheduler.initialize({Eigen::Vector3d::UnitX()}, Eigen::Vector3d::Zero(), 1.0, -1.0),
                std::invalid_argument);
+  // scheduler_speed_factor must lie in (0, 1].
+  EXPECT_THROW(scheduler.initialize({Eigen::Vector3d::UnitX()}, Eigen::Vector3d::Zero(), 1.0, 0.0,
+                                    /*scheduler_speed_factor=*/0.0),
+               std::invalid_argument);
+  EXPECT_THROW(scheduler.initialize({Eigen::Vector3d::UnitX()}, Eigen::Vector3d::Zero(), 1.0, 0.0,
+                                    /*scheduler_speed_factor=*/1.5),
+               std::invalid_argument);
+  EXPECT_THROW(scheduler.initialize({Eigen::Vector3d::UnitX()}, Eigen::Vector3d::Zero(), 1.0, 0.0,
+                                    /*scheduler_speed_factor=*/-0.1),
+               std::invalid_argument);
+}
+
+TEST(WaypointSchedulerTest, SpeedFactorInflatesSegmentDurations) {
+  WaypointScheduler scheduler;
+  const std::vector<Eigen::Vector3d> wps = {
+      Eigen::Vector3d(10.0, 0.0, 0.0),
+      Eigen::Vector3d(10.0, 5.0, 0.0),
+  };
+  const Eigen::Vector3d start(0.0, 0.0, 0.0);
+  const double max_speed = 5.0;
+  const double margin    = 1.0;
+  const double factor    = 0.5;
+
+  scheduler.initialize(wps, start, max_speed, margin, factor);
+
+  // First hop: 10 m / (5 m/s * 0.5) + 1 s = 5 s.
+  EXPECT_NEAR(scheduler.switchTime(0), 10.0 / (5.0 * 0.5) + 1.0, kTolerance);
+  // Second hop adds 5 m / (5 m/s * 0.5) + 1 s = 3 s.
+  EXPECT_NEAR(scheduler.switchTime(1), scheduler.switchTime(0) + 5.0 / (5.0 * 0.5) + 1.0,
+              kTolerance);
+}
+
+TEST(WaypointSchedulerTest, DefaultFactorMatchesLegacyHeuristic) {
+  // Omitting the factor (or passing 1.0) reproduces the original
+  // distance/max_speed heuristic. Guards against accidental ABI change.
+  WaypointScheduler s_default;
+  WaypointScheduler s_one;
+  const std::vector<Eigen::Vector3d> wps = {Eigen::Vector3d(3.0, 4.0, 0.0)};
+  s_default.initialize(wps, Eigen::Vector3d::Zero(), 1.0, 0.5);
+  s_one.initialize(wps, Eigen::Vector3d::Zero(), 1.0, 0.5, 1.0);
+  EXPECT_NEAR(s_default.switchTime(0), s_one.switchTime(0), kTolerance);
+  EXPECT_NEAR(s_default.switchTime(0), 5.0 + 0.5, kTolerance);
 }
 
 TEST(WaypointSchedulerTest, SingleWaypointMissionIsFinishedAfterFirstSwitchTime) {

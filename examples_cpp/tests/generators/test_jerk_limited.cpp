@@ -113,9 +113,9 @@ TEST_F(JerkLimitedGeneratorTest, VelocityProfileApproachesMaxSpeed) {
   // The S-curve must reach at least 90% of max_speed and never exceed it.
   double max_observed_speed = 0.0;
   for (int k = 0; k < 6000; ++k) {
-    const double t = 0.01 * k;
-    const auto s   = gen_->evaluate(t);
-    const double v = s.velocity.norm();
+    const double t     = 0.01 * k;
+    const auto s       = gen_->evaluate(t);
+    const double v     = s.velocity.norm();
     max_observed_speed = std::max(max_observed_speed, v);
     EXPECT_LE(v, max_speed * 1.001) << "t=" << t;
   }

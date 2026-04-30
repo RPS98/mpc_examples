@@ -94,9 +94,9 @@ void JerkLimitedGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoin
   }
 
   // Two-waypoint hop. The one-shot API resets internally to waypoints[0]
-  // with v=0, a=0 — same as the rest of p2p adapters (gcopter, dynamic,
-  // mav_traj_gen). The settle margin in the WaypointScheduler absorbs the
-  // resulting v0 discontinuity at segment boundaries.
+  // with v=0, a=0 — same as the rest of p2p adapters (gcopter, dynamic).
+  // The settle margin in the WaypointScheduler absorbs the resulting v0
+  // discontinuity at segment boundaries.
   std::vector<tg::Waypoint> wps = {tg::Waypoint(p0), tg::EndWaypoint(next_waypoint)};
   has_plan_                     = ctrl_->generate(wps, max_speed_);
   if (!has_plan_) {

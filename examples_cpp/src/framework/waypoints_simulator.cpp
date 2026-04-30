@@ -131,7 +131,8 @@ void WaypointsSimulator::run() {
   // --- Scheduler ------------------------------------------------------------
   WaypointScheduler scheduler;
   scheduler.initialize(example_cfg_.waypoints, initial_state.getPositionVector(),
-                       example_cfg_.max_speed, example_cfg_.settle_margin_s);
+                       example_cfg_.max_speed, example_cfg_.settle_margin_s,
+                       example_cfg_.scheduler_speed_factor);
 
   // The first waypoint becomes active at t=0.
   traj_gen_->onWaypointChanged(example_cfg_.waypoints.front(), initial_state, 0.0);

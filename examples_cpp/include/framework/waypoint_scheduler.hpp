@@ -28,12 +28,15 @@ namespace mpc_examples::framework {
  * switch time for each waypoint as
  *
  *     t_switch[i] = t_switch[i-1]
- *                 + ||wp[i] - wp[i-1]|| / max_speed
+ *                 + ||wp[i] - wp[i-1]|| / (max_speed * scheduler_speed_factor)
  *                 + settle_margin_s
  *
- * where t_switch[0] = settle_margin_s (time to reach the first waypoint from
- * the initial position is treated as part of the first segment and computed
- * by the caller through `initialize(initial_position, ...)`).
+ * where the hop from the initial position to wp[0] follows the same rule.
+ * `scheduler_speed_factor` ∈ (0, 1] models the fact that smooth generators
+ * (bell-shaped or trapezoidal) never sustain max_speed during the whole
+ * segment; lowering the factor allocates more wall-clock time per hop so
+ * the drone can settle before the next waypoint switch. A factor of 1.0
+ * recovers the legacy distance/max_speed heuristic.
  *
  * Callers tick the scheduler with the current simulator time; the scheduler
  * reports whether the active waypoint has changed so the caller can notify
@@ -52,16 +55,21 @@ public:
   /**
    * @brief Prepare the scheduler for a run.
    *
-   * @param waypoints        Mission waypoints (world frame, m). Must not be empty.
-   * @param initial_position Initial drone position (world frame, m). Used to
-   *                         derive the time to reach the first waypoint.
-   * @param max_speed        Maximum allowed cruise speed [m/s]. Must be > 0.
-   * @param settle_margin_s  Extra time added to every waypoint hop [s]. >= 0.
+   * @param waypoints              Mission waypoints (world frame, m). Must not be empty.
+   * @param initial_position       Initial drone position (world frame, m). Used to
+   *                               derive the time to reach the first waypoint.
+   * @param max_speed              Maximum allowed cruise speed [m/s]. Must be > 0.
+   * @param settle_margin_s        Extra time added to every waypoint hop [s]. >= 0.
+   * @param scheduler_speed_factor Effective-speed factor in (0, 1]. The
+   *                               heuristic uses max_speed * factor as the
+   *                               expected average speed per segment.
+   *                               Defaults to 1.0 (legacy behaviour).
    */
   void initialize(const std::vector<Eigen::Vector3d>& waypoints,
                   const Eigen::Vector3d& initial_position,
                   double max_speed,
-                  double settle_margin_s);
+                  double settle_margin_s,
+                  double scheduler_speed_factor = 1.0);
 
   /**
    * @brief Query the scheduler at simulator time @p t.

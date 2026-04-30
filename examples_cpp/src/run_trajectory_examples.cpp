@@ -238,8 +238,7 @@ int main(int argc, char** argv) {
   // single-script invocation pattern), the matching catalog entry runs even
   // if it is `enabled: false`. The two `*_config` paths are still taken from
   // the YAML entry — the override only relaxes the enabled gate.
-  const bool explicit_combo =
-      !args.only_controller.empty() && !args.only_generator.empty();
+  const bool explicit_combo = !args.only_controller.empty() && !args.only_generator.empty();
 
   // First pass: announce skips and collect the in-scope specs (preserving the
   // YAML order so the [i/N] indexing matches between sequential and parallel).
@@ -273,8 +272,8 @@ int main(int argc, char** argv) {
       std::cerr << "No enabled runs match trajectory_examples' scope "
                    "(generator ∈ {gcopter, jerk_limited, dynamic, mav_traj_gen}";
       if (!args.only_controller.empty() || !args.only_generator.empty()) {
-        std::cerr << ", --only-controller='" << args.only_controller
-                  << "', --only-generator='" << args.only_generator << "'";
+        std::cerr << ", --only-controller='" << args.only_controller << "', --only-generator='"
+                  << args.only_generator << "'";
       }
       std::cerr << "). Nothing to do.\n";
     }

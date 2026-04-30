@@ -82,17 +82,26 @@ struct RunSpec {
 };
 
 struct ExampleConfig {
-  double sim_time           = 0.0;
-  double model_dt           = 0.0;
-  double controller_dt      = 0.0;
-  double mpc_dt             = 0.0;
-  double pid_dt             = 0.0;
-  double max_speed          = 0.0;
-  double hover_time         = 0.0;
-  double settle_margin_s    = 2.0;  ///< Margin added to each waypoint hop (s).
-  bool path_facing          = true;
-  std::string output_format = "mcap";  ///< Output format: "mcap" or "csv".
-  bool benchmark            = false;   ///< Skip CSV logging for performance measurement.
+  double sim_time        = 0.0;
+  double model_dt        = 0.0;
+  double controller_dt   = 0.0;
+  double mpc_dt          = 0.0;
+  double pid_dt          = 0.0;
+  double max_speed       = 0.0;
+  double hover_time      = 0.0;
+  double settle_margin_s = 2.0;  ///< Margin added to each waypoint hop (s).
+  /// Effective-speed factor used by WaypointScheduler when budgeting time
+  /// per segment. The heuristic assumes the drone travels at
+  /// max_speed * scheduler_speed_factor on average. Bell-shaped (gcopter,
+  /// mav_traj_gen) and trapezoidal (jerk_limited) generators never
+  /// sustain max_speed during the whole hop, so a factor < 1.0 buys the
+  /// scheduler enough time for the drone to settle before the next
+  /// waypoint switch. Must lie in (0, 1]. Default 1.0 keeps the legacy
+  /// distance/max_speed heuristic.
+  double scheduler_speed_factor = 1.0;
+  bool path_facing              = true;
+  std::string output_format     = "mcap";  ///< Output format: "mcap" or "csv".
+  bool benchmark                = false;   ///< Skip CSV logging for performance measurement.
   bool silent   = false;  ///< Suppress in-loop console output (progress bar, waypoint messages).
   bool parallel = false;  ///< Run all enabled cases concurrently (one worker per run).
 
@@ -321,6 +330,12 @@ inline ExampleConfig loadExampleConfig(const std::string& path) {
   config.hover_time = detail::readDoubleRequired(sim["hover_time"], "sim_config.hover_time");
   config.settle_margin_s =
       detail::readDoubleOptional(sim["settle_margin_s"], "sim_config.settle_margin_s", 2.0);
+  config.scheduler_speed_factor = detail::readDoubleOptional(
+      sim["scheduler_speed_factor"], "sim_config.scheduler_speed_factor", 1.0);
+  if (config.scheduler_speed_factor <= 0.0 || config.scheduler_speed_factor > 1.0) {
+    throw std::runtime_error("sim_config.scheduler_speed_factor must lie in (0, 1] (got " +
+                             std::to_string(config.scheduler_speed_factor) + ")");
+  }
   config.path_facing = detail::readBoolRequired(sim["path_facing"], "sim_config.path_facing");
   config.output_format =
       detail::readStringOptional(sim["output_format"], "sim_config.output_format", "mcap");

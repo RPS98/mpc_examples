@@ -36,10 +36,15 @@ class WaypointScheduler:
     switch time for each waypoint as::
 
         t_switch[i] = t_switch[i-1]
-                    + ||wp[i] - wp[i-1]|| / max_speed
+                    + ||wp[i] - wp[i-1]|| / (max_speed * scheduler_speed_factor)
                     + settle_margin_s
 
-    where the hop from the initial position to ``wp[0]`` follows the same rule.
+    where the hop from the initial position to ``wp[0]`` follows the same
+    rule. ``scheduler_speed_factor`` lies in (0, 1] and models the fact
+    that smooth generators (bell-shaped or trapezoidal) never sustain
+    ``max_speed`` during the whole segment; lowering the factor allocates
+    more wall-clock time per hop so the drone can settle before the next
+    waypoint switch. A factor of 1.0 recovers the legacy heuristic.
     """
 
     def __init__(self) -> None:
@@ -53,6 +58,7 @@ class WaypointScheduler:
         initial_position: np.ndarray,
         max_speed: float,
         settle_margin_s: float,
+        scheduler_speed_factor: float = 1.0,
     ) -> None:
         if not waypoints:
             raise ValueError('WaypointScheduler: waypoints must not be empty.')
@@ -60,16 +66,20 @@ class WaypointScheduler:
             raise ValueError('WaypointScheduler: max_speed must be > 0.')
         if settle_margin_s < 0.0:
             raise ValueError('WaypointScheduler: settle_margin_s must be >= 0.')
+        if scheduler_speed_factor <= 0.0 or scheduler_speed_factor > 1.0:
+            raise ValueError(
+                'WaypointScheduler: scheduler_speed_factor must lie in (0, 1].')
 
         self._waypoints = [np.asarray(wp, dtype=float).copy() for wp in waypoints]
         self._active_index = 0
         self._switch_times = []
 
+        effective_speed = max_speed * scheduler_speed_factor
         previous = np.asarray(initial_position, dtype=float).copy()
         t_cumulative = 0.0
         for wp in self._waypoints:
             distance = float(np.linalg.norm(wp - previous))
-            t_cumulative += distance / max_speed + settle_margin_s
+            t_cumulative += distance / effective_speed + settle_margin_s
             self._switch_times.append(t_cumulative)
             previous = wp
 

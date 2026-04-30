@@ -52,6 +52,15 @@ class ExampleConfig:
     max_speed: float = 0.0
     hover_time: float = 0.0
     settle_margin_s: float = 2.0
+    # Effective-speed factor used by WaypointScheduler when budgeting time
+    # per segment. The heuristic assumes the drone travels at
+    # max_speed * scheduler_speed_factor on average. Bell-shaped (gcopter,
+    # mav_traj_gen) and trapezoidal (jerk_limited) generators never
+    # sustain max_speed during the whole hop, so a factor < 1.0 buys the
+    # scheduler enough time for the drone to settle before the next
+    # waypoint switch. Must lie in (0, 1]. Default 1.0 keeps the legacy
+    # distance/max_speed heuristic.
+    scheduler_speed_factor: float = 1.0
     path_facing: bool = True
     benchmark: bool = False
     silent: bool = False
@@ -206,6 +215,12 @@ def load_example_config(path: str) -> ExampleConfig:
     cfg.hover_time = _read_double_required(sim.get('hover_time'), 'sim_config.hover_time')
     cfg.settle_margin_s = _read_double_optional(
         sim.get('settle_margin_s'), 'sim_config.settle_margin_s', 2.0)
+    cfg.scheduler_speed_factor = _read_double_optional(
+        sim.get('scheduler_speed_factor'), 'sim_config.scheduler_speed_factor', 1.0)
+    if cfg.scheduler_speed_factor <= 0.0 or cfg.scheduler_speed_factor > 1.0:
+        raise ValueError(
+            'sim_config.scheduler_speed_factor must lie in (0, 1] '
+            f'(got {cfg.scheduler_speed_factor})')
     cfg.path_facing = _read_bool_required(sim.get('path_facing'), 'sim_config.path_facing')
     cfg.benchmark = _read_bool_optional(sim.get('benchmark'), 'sim_config.benchmark', False)
     cfg.silent = _read_bool_optional(sim.get('silent'), 'sim_config.silent', False)

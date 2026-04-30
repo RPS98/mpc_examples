@@ -131,19 +131,13 @@ void MavTrajGenGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint
     return;
   }
 
-  // Insert a midpoint to encourage well-conditioned segment-time allocation.
-  // Pin the start waypoint's velocity to the drone's current velocity so the
-  // trajectory begins smoothly when the WaypointScheduler fires before the
-  // previous segment fully decelerates to zero.
-  const Eigen::Vector3d v0 = state.getLinearVelocityVector();
+  // Insert a midpoint to encourage well-conditioned segment-time
+  // allocation. Arrange-from-rest at the start waypoint, same as the
+  // rest of p2p adapters: the WaypointScheduler settle margin absorbs
+  // any residual v0 at segment boundaries.
   std::vector<mav_trajectory_generation_cpp::Waypoint> wps;
   wps.reserve(3);
-  mav_trajectory_generation_cpp::Waypoint start_wp;
-  start_wp.position = p0;
-  if (v0.norm() > 1e-3) {
-    start_wp.velocity = v0;
-  }
-  wps.push_back(start_wp);
+  wps.emplace_back(p0);
   wps.emplace_back(0.5 * (p0 + next_waypoint));
   wps.emplace_back(next_waypoint);
 

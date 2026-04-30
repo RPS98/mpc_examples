@@ -185,6 +185,7 @@ class WaypointsSimulator:
             np.asarray(initial_state.position, dtype=float),
             self._example_cfg.max_speed,
             self._example_cfg.settle_margin_s,
+            self._example_cfg.scheduler_speed_factor,
         )
 
         self._traj_gen.on_waypoint_changed(

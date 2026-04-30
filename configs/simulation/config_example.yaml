@@ -1,12 +1,13 @@
 sim_config:
   # --- Simulation timing ------------------------------------------------------
-  sim_time: 110.0             # Hard cap on simulated time (s). The run ends
+  sim_time: 160.0             # Hard cap on simulated time (s). The run ends
                               # at min(mission_end + hover_time, sim_time),
                               # even if that truncates the hover phase or the
                               # mission itself. Must be > 0.
                               # Sized for the 10-waypoint demanding mission:
-                              # ~46.86 m total path / 1 m/s + 10 hops * 5 s
-                              # settle = 96.86 s + 10 s hover = 106.86 s.
+                              # ~46.86 m total path / (1 m/s * 0.55 factor)
+                              # + 10 hops * 5 s settle = 135.2 s
+                              # + 10 s hover = 145.2 s.
   model_dt: 0.001             # Physics model timestep - 1000 Hz
   controller_dt: 0.002        # INDI + IMU update timestep - 500 Hz
   mpc_dt: 0.01                # MPC control timestep - 100 Hz
@@ -19,6 +20,28 @@ sim_config:
                               # 2x worst observed transient (~2-3 s to ±5 cm)
                               # for any of the 4 controllers in this vehicle,
                               # 5x worst replan time across all generators.
+  scheduler_speed_factor: 0.55
+                              # Effective-speed factor used by the
+                              # WaypointScheduler heuristic. Smooth generators
+                              # never sustain max_speed during the whole hop:
+                              # gcopter is bell-shaped and peaks at max_speed
+                              # only at the cresta; jerk_limited / mav_traj_gen
+                              # have ramps; the position carrot in waypoints
+                              # saturates the cascade below max_speed because
+                              # the position-PID kp clamps v_des and the
+                              # ramps at segment ends drag the average down.
+                              # 0.55 is the empirical worst-case observed on
+                              # the 13.7 m diagonal (segment 9 → 10) for the
+                              # cascaded position-PID: 22 s of transport gives
+                              # an average ||v|| ≈ 0.62 m/s, and the factor
+                              # must sit slightly below that so the 5 s
+                              # settle margin is preserved (factor=0.65
+                              # was tested 2026-04-30 and left only ~1 s of
+                              # actual settle on segment 9 — the last
+                              # waypoint switch fired before the drone had
+                              # stabilised). Must lie in (0, 1]. 1.0
+                              # recovers the legacy distance/max_speed
+                              # heuristic.
   path_facing: true
 
   # --- Logging / runtime ------------------------------------------------------
@@ -46,10 +69,33 @@ sim_config:
   generator_delay_fixed_s: 0.0
 
   # --- Waypoints (world frame, m) ---------------------------------------------
-  # Demanding 10-waypoint mission covering all 3 axes in close (1 m) and
-  # far (5-13.7 m) variants, plus 3-axis combined diagonals (close, far,
-  # medium). Initial state of the simulator is (0, 0, 0); the first
-  # waypoint acts as takeoff. Z stays >= 6 m for the whole mission.
+  # Initial state of the simulator is (0, 0, 0); the first waypoint acts
+  # as takeoff. Z stays >= 6 m for the whole mission.
+  #
+  # ACTIVE MISSION — minimal 2-waypoint case to isolate the curved arc
+  # observed in the cascade-PID + waypoints pair on the long diagonal
+  # hop. The drone takes off diagonally to (7,7,7) and then jumps to
+  # (-2,-2,12) — the same 13.67 m diagonal as segment 9 of the full
+  # mission, with the same sign reversal in X/Y and +5 m in Z. The
+  # 5 s settle margin between hops guarantees the drone is fully at
+  # rest at (7,7,7) before the diagonal starts, so the curve cannot be
+  # blamed on residual momentum from a previous segment.
+  #
+  # With max_speed=1.0 m/s and scheduler_speed_factor=0.55:
+  #   hop 0 (0,0,0) → (7,7,7), 12.12 m: t_switch = 27.04 s
+  #   hop 1 (7,7,7) → (-2,-2,12), 13.67 m: t_switch = 56.90 s
+  #   + hover_time → end ≈ 67 s.
+  # ISOLATED 2-WAYPOINT MISSION (commented for restoration) — used to
+  # study the curved arc on the cascade-PID + waypoints diagonal hop in
+  # isolation (drone at rest before the 13.67 m segment of interest).
+  #
+  # waypoints:
+  #   - [07.0, 07.0, 07.0]   # takeoff diagonal (12.12 m from origin)
+  #   - [-2.0, -2.0, 12.0]   # the segment under study (13.67 m diagonal)
+
+  # FULL MISSION (active) — demanding 10-waypoint mission covering all
+  # 3 axes in close (1 m) and far (5-13.7 m) variants, plus 3-axis
+  # combined diagonals (close, far, medium).
   waypoints:
     # Takeoff: Z far, single-axis (10 m)
     - [00.0, 00.0, 10.0]

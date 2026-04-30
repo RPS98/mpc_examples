@@ -16,36 +16,52 @@
 
 controller:
   position:
-    # Sized so kp * d_max ≈ max_speed (with d_max from config_waypoints.yaml,
-    # max_speed from config_example.yaml): at the maximum carrot offset the
-    # commanded velocity saturates exactly at the cruise limit. With
-    # d_max = 2.0 m and max_speed = 1.0 m/s, kp = 0.55 gives kp * d_max =
-    # 1.1, slightly above the clamp so the controller commits to the
-    # cruise speed faster while still relying on the internal velocity
-    # saturation to avoid overshoot.
-    kp: [0.55, 0.55, 0.75]
+    # Stability-first tuning (2026-04-30 sweep). With d_max = 2.0 m and
+    # max_speed = 1.0 m/s, kp = 0.45 gives kp * d_max = 0.9, deliberately
+    # *below* the velocity clamp so the carrot release at each waypoint
+    # produces a softer v_des transient. Trade-off: long hops never reach
+    # the cruise plateau (||v|| saturates around 0.92 m/s instead of 1.0).
+    # Vertical kp left slightly stiffer for the 10 m takeoff and −5 m
+    # descent. ki/kd kept at zero — the velocity loop downstream provides
+    # all the damping that the cascade needs.
+    #
+    # Note (2026-04-30): the curved arc visible in the segment 9
+    # (7,7,7) → (−2,−2,12) of the 3D plot is left as a known
+    # characteristic of the cascade-PID + carrot pair. Empirical sweeps
+    # with isotropic kp/kd loops + slow yaw straighten the 3D path but
+    # degrade the overall feel of the run (slower vertical response,
+    # nose lag with path_facing). The structural difference vs the
+    # smooth-trajectory generators (jerk_limited / gcopter), which feed
+    # a fully planned (p_ref, v_ref, a_ref) along the line of sight, is
+    # part of what this showcase intends to expose.
+    kp: [0.45, 0.45, 0.6]
     ki: [0.0, 0.0, 0.0]
     kd: [0.0, 0.0, 0.0]
     antiwindup_cte: 1.0
     alpha: 0.2
   velocity:
-    # kd dominates the braking transient when the position-PID releases its
-    # velocity command at the waypoint and provides the damping needed
-    # during diagonal direction reversals (e.g. seg 8 → seg 9 of the demo
-    # mission). ki kept at 0 because integral term mostly hurt the long
-    # 13.7 m diagonal in the empirical sweep (2026-04-30) by lengthening
-    # the settle of the final segment with leftover wind-up.
-    kp: [1.6, 1.6, 2.0]
+    # Stability-first tuning (2026-04-30 sweep). The previous [1.6, 1.6, 2.0]
+    # / [1.3, 1.3, 1.8] tuning produced two failure modes on the demo
+    # mission: a vz overshoot to −1.35 m/s on the −5 m descent (z dipped
+    # to ~9 m) and a 2.4 m/s ||v|| spike right after the 13.7 m diagonal.
+    # Both were the cascade over-correcting the v_des step that the
+    # position PID emits when the waypoint switches. Lowering the
+    # velocity-loop bandwidth (kp 1.6→1.0, kd 1.3→0.7) eliminates both.
+    # alpha = 0.06 is a heavier low-pass on the derivative term to
+    # attenuate the high-frequency content visible in vx during the
+    # short hops at 15-30 s. ki kept at 0 (anti-windup not needed).
+    kp: [1.0, 1.0, 1.3]
     ki: [0.0, 0.0, 0.0]
-    kd: [1.3, 1.3, 1.8]
+    kd: [0.7, 0.7, 1.0]
     antiwindup_cte: 0.4
-    alpha: 0.1
+    alpha: 0.06
     saturation_upper: [10.0, 10.0, 15.0]
     saturation_lower: [-10.0, -10.0, -15.0]
   geometric:
     mass: 1.140
-    # Faster attitude response for combined diagonal hops where the tilt
-    # reference changes simultaneously with body-frame translation. Empirical
-    # sweep (2026-04-30) showed [6, 6, 3] cuts seg 9 settle from 15.5 s
-    # (rotation_kp=[4,4,2] baseline) to 10.7 s with no jerk penalty.
-    rotation_kp: [6.0, 6.0, 3.0]
+    # Softer attitude bandwidth than the previous [6, 6, 3] tuning. The
+    # stiffer values excited inner-loop dynamics during diagonal segments,
+    # contributing to the ||v|| spike at t≈88-92 s. [4.5, 4.5, 2.5] yields
+    # cleaner thrust-vector tracking at the price of a longer settle on
+    # segment 9 (~12-13 s vs 10.7 s) — acceptable.
+    rotation_kp: [4.5, 4.5, 2.5]

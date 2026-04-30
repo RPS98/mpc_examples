@@ -207,16 +207,12 @@ class MavTrajGenGenerator(ITrajectoryGenerator):
             self._duration = 0.0
             return
 
-        # Pin the start waypoint's velocity to the drone's current velocity so
-        # the trajectory begins smoothly, avoiding a velocity discontinuity at
-        # segment transitions (the WaypointScheduler fires before the previous
-        # segment fully decelerates to zero).
-        v0 = np.asarray(state.linear_velocity, dtype=float)
-        start_wp = Waypoint(p0)
-        if np.linalg.norm(v0) > 1e-3:
-            start_wp.velocity = v0
+        # Insert a midpoint to encourage well-conditioned segment-time
+        # allocation. Arrange-from-rest at the start waypoint, same as the
+        # rest of p2p adapters: the WaypointScheduler settle margin absorbs
+        # any residual v0 at segment boundaries.
         midpoint = 0.5 * (p0 + self._target_wp)
-        wps = [start_wp, Waypoint(midpoint), Waypoint(self._target_wp)]
+        wps = [Waypoint(p0), Waypoint(midpoint), Waypoint(self._target_wp)]
 
         ok = self._ctrl.generate(wps, self._max_speed)
         if not ok:

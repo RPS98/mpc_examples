@@ -63,6 +63,36 @@ class WaypointSchedulerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             scheduler.initialize([np.array([1.0, 0.0, 0.0])], np.zeros(3),
                                  max_speed=1.0, settle_margin_s=-1.0)
+        # scheduler_speed_factor must lie in (0, 1].
+        for bad_factor in (0.0, -0.1, 1.5):
+            with self.assertRaises(ValueError):
+                scheduler.initialize([np.array([1.0, 0.0, 0.0])], np.zeros(3),
+                                     max_speed=1.0, settle_margin_s=0.0,
+                                     scheduler_speed_factor=bad_factor)
+
+    def test_speed_factor_inflates_segment_durations(self) -> None:
+        wps = [np.array([10.0, 0.0, 0.0]), np.array([10.0, 5.0, 0.0])]
+        scheduler = WaypointScheduler()
+        scheduler.initialize(wps, np.zeros(3), max_speed=5.0, settle_margin_s=1.0,
+                             scheduler_speed_factor=0.5)
+        # First hop: 10 m / (5 m/s * 0.5) + 1 s = 5 s.
+        self.assertAlmostEqual(scheduler.switch_time(0),
+                               10.0 / (5.0 * 0.5) + 1.0, delta=_TOLERANCE)
+        # Second hop adds 5 m / (5 m/s * 0.5) + 1 s = 3 s.
+        self.assertAlmostEqual(scheduler.switch_time(1),
+                               scheduler.switch_time(0) + 5.0 / (5.0 * 0.5) + 1.0,
+                               delta=_TOLERANCE)
+
+    def test_default_factor_matches_legacy_heuristic(self) -> None:
+        s_default = WaypointScheduler()
+        s_one = WaypointScheduler()
+        wps = [np.array([3.0, 4.0, 0.0])]
+        s_default.initialize(wps, np.zeros(3), max_speed=1.0, settle_margin_s=0.5)
+        s_one.initialize(wps, np.zeros(3), max_speed=1.0, settle_margin_s=0.5,
+                         scheduler_speed_factor=1.0)
+        self.assertAlmostEqual(s_default.switch_time(0), s_one.switch_time(0),
+                               delta=_TOLERANCE)
+        self.assertAlmostEqual(s_default.switch_time(0), 5.0 + 0.5, delta=_TOLERANCE)
 
     def test_single_waypoint_mission_finishes_after_first_switch_time(self) -> None:
         scheduler = WaypointScheduler()
