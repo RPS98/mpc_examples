@@ -225,18 +225,28 @@ int main(int argc, char** argv) {
     return true;
   };
 
+  // When the caller pins both --only-controller and --only-generator (the
+  // single-script invocation pattern), the matching catalog entry runs even
+  // if it is `enabled: false`. The two `*_config` paths are still taken from
+  // the YAML entry — the override only relaxes the enabled gate.
+  const bool explicit_combo =
+      !args.only_controller.empty() && !args.only_generator.empty();
+
   // First pass: announce skips and collect the in-scope specs (preserving the
   // YAML order so the [i/N] indexing matches between sequential and parallel).
   std::vector<RunSpec> scoped;
   scoped.reserve(example_cfg.runs.size());
+  bool explicit_combo_found = false;
   for (const auto& spec : example_cfg.runs) {
-    if (!spec.enabled) continue;
+    const bool matches_filters = caseSelected(spec);
+    if (explicit_combo && matches_filters) explicit_combo_found = true;
+    if (!spec.enabled && !(explicit_combo && matches_filters)) continue;
     if (!isPositionRun(spec)) {
       std::cout << "[skipped] " << spec.controller << " + " << spec.generator
                 << " (not in position_examples scope)\n";
       continue;
     }
-    if (!caseSelected(spec)) {
+    if (!matches_filters) {
       std::cout << "[skipped] " << spec.controller << " + " << spec.generator
                 << " (filtered out by --only-*)\n";
       continue;
@@ -245,13 +255,20 @@ int main(int argc, char** argv) {
   }
 
   if (scoped.empty()) {
-    std::cerr << "No enabled runs match position_examples' scope "
-                 "(generator == 'waypoints'";
-    if (!args.only_controller.empty() || !args.only_generator.empty()) {
-      std::cerr << ", --only-controller='" << args.only_controller << "', --only-generator='"
-                << args.only_generator << "'";
+    if (explicit_combo && !explicit_combo_found) {
+      std::cerr << "No entry matching --only-controller='" << args.only_controller
+                << "' --only-generator='" << args.only_generator
+                << "' found in sim_config.runs[]. Add it to "
+                   "configs/simulation/config_example.yaml.\n";
+    } else {
+      std::cerr << "No enabled runs match position_examples' scope "
+                   "(generator == 'waypoints'";
+      if (!args.only_controller.empty() || !args.only_generator.empty()) {
+        std::cerr << ", --only-controller='" << args.only_controller
+                  << "', --only-generator='" << args.only_generator << "'";
+      }
+      std::cerr << "). Nothing to do.\n";
     }
-    std::cerr << "). Nothing to do.\n";
     return 0;
   }
 

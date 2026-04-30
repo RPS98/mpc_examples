@@ -53,14 +53,7 @@ post_run_review() {
   done
 
   echo ""
-  echo "[metrics] ${run_dir}"
-  python3 -m mav_flight_review.compute_metrics --run-dir "${run_dir}" || true
-
-  echo ""
-  python3 -m mav_flight_review.print_summary --run-dir "${run_dir}" || true
-
-  echo ""
-  echo "[plot   ] ${run_dir}"
-  python3 -m mav_flight_review.cli \
+  echo "[review ] ${run_dir}"
+  python3 -m mav_flight_review.review \
     --run-dir "${run_dir}" ${no_show} ${no_save} || true
 }

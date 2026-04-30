@@ -53,8 +53,14 @@ with every generator; the two MPCs are family-specific):
 | `mpc_trajectory` (acados)   | — | ✓ | ✓ | ✓ | ✓ |
 
 The default `configs/simulation/config_example.yaml` enables ten cases
-(every entry that is meaningful in either binary's scope). Disable any case
-by flipping its `enabled: false` flag.
+(every entry that is meaningful in either binary's scope). Each entry
+declares its `controller_config` and `generator_config` explicitly, so
+the YAML is the single source of truth about which tuning each
+combination uses. The `enabled: true|false` flag gates inclusion in
+batch runs (`run_all.sh`, `run_position_examples`,
+`run_trajectory_examples`); the per-case scripts under
+`scripts/single/*` always execute their combination regardless of
+`enabled` (they pass both `--only-controller` and `--only-generator`).
 
 > **Known limitation** — `mpc_trajectory + dynamic` is borderline: the
 > dynamic generator emits aggressive accelerations under the default p2p
@@ -231,7 +237,9 @@ metrics aggregator and dashboard from `mav_flight_review`.
 
 The wrappers under `scripts/single/` cover every (controller × generator)
 combination — 20 scripts total, one C++ and one Python launcher per
-enabled combo:
+combo. They run regardless of the `enabled` flag in `runs[]`, so they
+remain a reliable per-case smoke test even when batch entries are
+disabled:
 
 ```bash
 ./scripts/single/pid_waypoints_cpp.sh
@@ -263,6 +271,11 @@ To call a binary directly:
   --only-generator  mav_traj_gen \
   --output-dir simulator_logs/manual_run
 ```
+
+Passing both `--only-controller` and `--only-generator` overrides the
+matching entry's `enabled` flag (the entry must still exist in
+`runs[]` so its `controller_config` / `generator_config` are picked
+up). With only one of the two filters, `enabled` is respected.
 
 ## Tests
 

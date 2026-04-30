@@ -112,19 +112,11 @@ case "$LANG_SEL" in
 esac
 
 echo ""
-echo "[run_all] computing metrics"
-python3 -m mav_flight_review.compute_metrics --run-dir "$OUT_DIR" || true
-
-echo ""
-echo "[run_all] metrics summary"
-python3 -m mav_flight_review.print_summary --run-dir "$OUT_DIR" || true
-
-echo ""
-echo "[run_all] rendering dashboard"
-DASHBOARD_FLAGS=()
-[[ "$SHOW" -eq 0 ]] && DASHBOARD_FLAGS+=(--no-show)
-[[ "$SAVE" -eq 0 ]] && DASHBOARD_FLAGS+=(--no-save)
-python3 -m mav_flight_review.cli --run-dir "$OUT_DIR" "${DASHBOARD_FLAGS[@]}" || true
+echo "[run_all] reviewing run (decode + metrics + summary + dashboard)"
+REVIEW_FLAGS=()
+[[ "$SHOW" -eq 0 ]] && REVIEW_FLAGS+=(--no-show)
+[[ "$SAVE" -eq 0 ]] && REVIEW_FLAGS+=(--no-save)
+python3 -m mav_flight_review.review --run-dir "$OUT_DIR" "${REVIEW_FLAGS[@]}" || true
 
 echo ""
 if [[ "$SAVE" -eq 1 ]]; then

@@ -21,9 +21,14 @@ controller:
     # term no longer has to synthesise the acceleration profile from scratch,
     # so kp is conservative — just enough to close steady tracking lag without
     # amplifying it into velocity overshoot when the reference reaches v_max.
-    kp: [3.0, 3.0, 3.0]
-    ki: [0.005, 0.005, 0.005]
-    kd: [4.0, 4.0, 4.0]
+    # 2026-04-30 sweep over the 4 generators (jerk_limited, gcopter, dynamic,
+    # mav_traj_gen) showed that kp = 3 is the right floor: kp = 6 inflates
+    # overshoot ×3-12 with no RMSE benefit (RMSE dominated by the trajectory
+    # shape, not the tracker). Z is bumped to 3.5 / 4.5 / 0.01 to tighten the
+    # 10 m takeoff and the −5 m descent without affecting horizontal hops.
+    kp: [3.0, 3.0, 3.5]
+    ki: [0.005, 0.005, 0.01]
+    kd: [4.0, 4.0, 4.5]
     antiwindup_cte: 1.0
     alpha: 0.6
     # Per-axis symmetric output saturation [m/s²]. Optional — leave unset to
@@ -33,4 +38,5 @@ controller:
     # a_max: 10.0
   geometric:
     mass: 1.140
-    rotation_kp: [4.5, 4.5, 2.5]
+    # Faster attitude response for combined diagonal hops.
+    rotation_kp: [5.0, 5.0, 3.0]

@@ -132,6 +132,11 @@ Documentadas en detalle en los headers. Resumen:
   `waypoints`; `trajectory_examples` recoge `gcopter | jerk_limited |
   dynamic | mav_traj_gen`. Cualquier run habilitado fuera del scope se
   salta con un log-info.
+- **`runs[]` con configs explícitos**: cada entrada declara los cuatro
+  campos (`controller`, `generator`, `enabled`, `controller_config`,
+  `generator_config`) en block style. Las factorías siguen teniendo
+  defaults internos, pero el YAML los sobreescribe siempre — no hay
+  defaults ocultos en el catálogo.
 
 ## Contratos importantes
 
@@ -148,6 +153,16 @@ Documentadas en detalle en los headers. Resumen:
   último `t_switch` del `WaypointScheduler`. `sim_time` es por tanto un
   tope duro (validado `> 0`) que puede truncar la fase de hover o incluso
   la propia misión si se fija demasiado pequeño.
+- **Singles independientes de `enabled`**: cuando el binario recibe
+  **ambos** `--only-controller=X` y `--only-generator=Y` (patrón de
+  `scripts/single/*.sh`), el entry matching de `runs[]` se ejecuta
+  aunque tenga `enabled: false`. Los `*_config` se siguen leyendo del
+  catálogo. Si el combo (X, Y) no existe en `runs[]` se aborta con un
+  mensaje claro pidiendo añadirlo. Con un solo `--only-*` (o ninguno)
+  el flag `enabled` se respeta — caso de `run_all.sh`. Implementado
+  en [run_position_examples.cpp](examples_cpp/src/run_position_examples.cpp),
+  [run_trajectory_examples.cpp](examples_cpp/src/run_trajectory_examples.cpp)
+  y [_runner.py](examples_py/examples_py/runs/_runner.py).
 - **Telemetría**: MCAP ROS 2-compatible por defecto
   (`sim_config.output_format: mcap`); CSV si `output_format: csv`. Topics
   emitidos por `unified_mcap_logger` cubren ground-truth, references,

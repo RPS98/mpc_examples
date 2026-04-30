@@ -244,14 +244,11 @@ def run_with_filter(
             return False
         return True
 
-    enabled_in_scope = [
-        s for s in example_cfg.runs
-        if s.enabled and generator_whitelist(s) and case_selected(s)
-    ]
-    if not enabled_in_scope:
-        sys.stderr.write(
-            f"No enabled runs match {prog}'s scope — nothing to do.\n")
-        return 0
+    # When the caller pins both --only-controller and --only-generator (the
+    # single-script invocation pattern), the matching catalog entry runs even
+    # if it is `enabled: false`. The two `*_config` paths are still taken from
+    # the YAML entry — the override only relaxes the enabled gate.
+    explicit_combo = bool(args.only_controller) and bool(args.only_generator)
 
     run_id = _make_run_id()
     out_root = (
@@ -267,17 +264,37 @@ def run_with_filter(
     suffix = ' · mode=parallel' if parallel else ''
     print(f'{prog} · run_id={run_id} · output_dir={out_root}{suffix}')
 
-    # Announce skipped entries (enabled but out-of-scope or filtered out by
-    # --only-*) for symmetry with the C++ runners.
+    # Single pass: announce skips (mirroring the C++ runners) and collect the
+    # in-scope specs preserving YAML order.
+    enabled_in_scope: List[RunSpec] = []
+    explicit_combo_found = False
     for spec in example_cfg.runs:
-        if not spec.enabled:
+        matches_filters = case_selected(spec)
+        if explicit_combo and matches_filters:
+            explicit_combo_found = True
+        if not spec.enabled and not (explicit_combo and matches_filters):
             continue
         if not generator_whitelist(spec):
             print(f'[skipped] {spec.controller} + {spec.generator} '
                   f'(not in {prog} scope)')
-        elif not case_selected(spec):
+            continue
+        if not matches_filters:
             print(f'[skipped] {spec.controller} + {spec.generator} '
                   f'(filtered out by --only-*)')
+            continue
+        enabled_in_scope.append(spec)
+
+    if not enabled_in_scope:
+        if explicit_combo and not explicit_combo_found:
+            sys.stderr.write(
+                f"No entry matching --only-controller='{args.only_controller}' "
+                f"--only-generator='{args.only_generator}' found in "
+                f"sim_config.runs[]. Add it to "
+                f"configs/simulation/config_example.yaml.\n")
+        else:
+            sys.stderr.write(
+                f"No enabled runs match {prog}'s scope — nothing to do.\n")
+        return 0
 
     n = len(enabled_in_scope)
     results: List[Optional[_CaseResult]] = [None] * n

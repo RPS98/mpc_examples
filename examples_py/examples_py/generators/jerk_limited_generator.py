@@ -6,7 +6,12 @@
 """Jerk-limited trajectory adapter (point-to-point API).
 
 Python mirror of
-``examples/adapters/trajectory_generators/jerk_limited/src/jerk_limited_generator.cpp``.
+``examples_cpp/src/generators/jerk_limited_generator.cpp``.
+
+At each transition, ``on_waypoint_changed()`` runs the offline S-curve
+simulator with ``[current_pos, next_waypoint]``; ``evaluate()`` then
+samples the resulting trajectory using a segment-local time
+``t - t_start``.
 """
 
 __authors__ = 'Rafael Perez-Segui'
@@ -21,8 +26,10 @@ import numpy as np
 import yaml
 from mavpy.model import State
 from trajectory_generator_jerk_limited import (
-    TrajectoryParameters,
-    WaypointTrajectoryController,
+    EndWaypoint,
+    TrajectoryGenerator,
+    Waypoint,
+    _NativeGeneratorConfig,
 )
 
 from examples_py.framework import (
@@ -42,6 +49,9 @@ _MAX_YAW_RATE_REF_RAD_PER_SEC = 1.0   # [rad/s]
 class JerkLimitedConfig:
     max_acceleration: float = 0.0
     max_jerk: float = 0.0
+    #: Forwarded to TrajectoryParameters but unused by the one-shot API
+    #: (the streaming time-stretch gate does not apply to offline planning).
+    #: Kept for schema compatibility; <= 0 disables the bound.
     max_tracking_error: float = 0.0
 
 
@@ -61,18 +71,21 @@ def _wrap_to_pi(x: float) -> float:
 
 
 class JerkLimitedGenerator(ITrajectoryGenerator):
-    """Jerk-limited smoother toward the current target waypoint (p2p)."""
+    """Offline S-curve replanned per waypoint transition (p2p)."""
 
     def __init__(self, cfg: JerkLimitedConfig) -> None:
         self._cfg = cfg
-        self._ctrl: Optional[WaypointTrajectoryController] = None
+        self._ctrl: Optional[TrajectoryGenerator] = None
         self._target_wp = np.zeros(3, dtype=float)
+        self._hold_pos = np.zeros(3, dtype=float)
+        self._duration = 0.0
+        self._t_segment_start = 0.0
+        self._has_plan = False
+        self._max_speed = 0.0
         self._path_facing = False
         self._has_prev_t = False
         self._prev_t = 0.0
-        self._last_sample_t = 0.0
         self._yaw_ref_hold = 0.0
-        self._last_sample = ReferenceSample()
         self._name = 'JerkLimitedGenerator'
 
     @staticmethod
@@ -98,37 +111,55 @@ class JerkLimitedGenerator(ITrajectoryGenerator):
         self._path_facing = bool(example_cfg.path_facing)
         self._has_prev_t = False
         self._prev_t = 0.0
-        self._last_sample_t = 0.0
         self._yaw_ref_hold = _quat_to_yaw(
             np.asarray(initial_state.orientation, dtype=float))
+        self._max_speed = float(example_cfg.max_speed)
 
-        params = TrajectoryParameters()
-        params.max_speed = example_cfg.max_speed
-        params.max_acceleration = self._cfg.max_acceleration
-        params.max_jerk = self._cfg.max_jerk
-        params.max_tracking_error = self._cfg.max_tracking_error
-
-        self._ctrl = WaypointTrajectoryController(params)
         p0 = np.asarray(initial_state.position, dtype=float)
-        self._ctrl.reset(p0)
+        self._hold_pos = p0.copy()
         self._target_wp = p0.copy()
+        self._duration = 0.0
+        self._t_segment_start = 0.0
+        self._has_plan = False
 
-        self._last_sample = ReferenceSample(
-            position=p0.copy(),
-            velocity=np.zeros(3, dtype=float),
-            acceleration=np.zeros(3, dtype=float),
-            yaw=self._yaw_ref_hold,
-        )
+        # Construct the offline solver once; reused across segments via generate().
+        cfg = _NativeGeneratorConfig()
+        cfg.params.max_speed = self._max_speed
+        cfg.params.max_acceleration = self._cfg.max_acceleration
+        cfg.params.max_jerk = self._cfg.max_jerk
+        cfg.params.max_tracking_error = self._cfg.max_tracking_error
+        self._ctrl = TrajectoryGenerator(cfg)
 
     def on_waypoint_changed(
         self, next_waypoint: np.ndarray, state: State, t_start: float,
     ) -> None:
-        del state, t_start
-        self._target_wp = np.asarray(next_waypoint, dtype=float).copy()
-        # The jerk-limited controller integrates continuously; no explicit
-        # replan call is needed — subsequent update() steps drive to target.
+        if self._ctrl is None:
+            raise RuntimeError(
+                'JerkLimitedGenerator: initialize() must be called before '
+                'on_waypoint_changed().')
+        p0 = np.asarray(state.position, dtype=float)
+        next_wp = np.asarray(next_waypoint, dtype=float).copy()
+        self._target_wp = next_wp
+        self._hold_pos = next_wp.copy()
+        self._t_segment_start = float(t_start)
+
+        if float(np.linalg.norm(next_wp - p0)) < 1e-6:
+            self._has_plan = False
+            self._duration = 0.0
+            return
+
+        # Two-waypoint hop. Same arrange-from-rest constraint as the rest
+        # of p2p adapters (gcopter, dynamic, mav_traj_gen): the scheduler
+        # settle margin absorbs the v0 discontinuity at segment boundaries.
+        wps = [Waypoint(p0), EndWaypoint(next_wp)]
+        self._has_plan = bool(self._ctrl.generate(wps, self._max_speed))
+        if not self._has_plan:
+            self._duration = 0.0
+            return
+        self._duration = float(self._ctrl.duration())
 
     def update(self, t: float, state: State) -> None:
+        del state
         if self._ctrl is None:
             raise RuntimeError(
                 'JerkLimitedGenerator: initialize() must be called before update().')
@@ -137,61 +168,44 @@ class JerkLimitedGenerator(ITrajectoryGenerator):
         self._prev_t = t
         self._has_prev_t = True
 
-        position = np.asarray(state.position, dtype=float)
-        if dt > 0.0:
-            setpoints = self._ctrl.update(dt, position, self._target_wp)
-            self._last_sample.position = np.asarray(
-                setpoints.position, dtype=float).copy()
-            self._last_sample.velocity = np.asarray(
-                setpoints.velocity, dtype=float).copy()
-            self._last_sample.acceleration = np.asarray(
-                setpoints.acceleration, dtype=float).copy()
-        self._last_sample_t = t
+        if not self._has_plan:
+            return
+        t_local = max(0.0, min(t - self._t_segment_start, self._duration))
 
         if self._path_facing:
-            horiz_speed = float(np.linalg.norm(self._last_sample.velocity[:2]))
+            vel = np.asarray(self._ctrl.velocity(t_local), dtype=float)
+            horiz_speed = float(np.linalg.norm(vel[:2]))
             if horiz_speed > _MIN_HORIZONTAL_SPEED_FOR_YAW:
-                yaw_target = math.atan2(
-                    float(self._last_sample.velocity[1]),
-                    float(self._last_sample.velocity[0]))
+                yaw_target = math.atan2(float(vel[1]), float(vel[0]))
                 yaw_delta = _wrap_to_pi(yaw_target - self._yaw_ref_hold)
-                step = _MAX_YAW_RATE_REF_RAD_PER_SEC * (dt if dt > 0.0 else 0.0)
+                step = _MAX_YAW_RATE_REF_RAD_PER_SEC * dt
                 yaw_delta = max(-step, min(step, yaw_delta))
                 self._yaw_ref_hold += yaw_delta
-            self._last_sample.yaw = self._yaw_ref_hold
         else:
-            self._last_sample.yaw = 0.0
+            self._yaw_ref_hold = 0.0
 
     def evaluate(self, t: float) -> ReferenceSample:
-        # Forward-project the last stage-0 sample kinematically so the MPC
-        # horizon stages are consistent (pos[k+1] ≈ pos[k] + vel*dt). The
-        # internal S-curve is stateful and would be mutated by a proper
-        # look-ahead, so we use constant-velocity extrapolation clamped at the
-        # current target waypoint.
-        dt = t - self._last_sample_t
-        if dt <= 0.0:
-            return ReferenceSample(
-                position=self._last_sample.position.copy(),
-                velocity=self._last_sample.velocity.copy(),
-                acceleration=self._last_sample.acceleration.copy(),
-                yaw=self._last_sample.yaw,
-            )
-        predicted = self._last_sample.position + self._last_sample.velocity * dt
-        to_target = self._target_wp - self._last_sample.position
-        remaining = float(np.linalg.norm(to_target))
-        travel = float(np.linalg.norm(self._last_sample.velocity)) * dt
-        if remaining <= 1e-9 or travel >= remaining:
-            pos = self._target_wp.copy()
-            vel = np.zeros(3, dtype=float)
-        else:
-            pos = predicted
-            vel = self._last_sample.velocity.copy()
-        return ReferenceSample(
-            position=pos,
-            velocity=vel,
-            acceleration=np.zeros(3, dtype=float),
-            yaw=self._last_sample.yaw,
-        )
+        sample = ReferenceSample(yaw=self._yaw_ref_hold)
+        if not self._has_plan or self._ctrl is None:
+            sample.position = self._hold_pos.copy()
+            return sample
+        t_rel = t - self._t_segment_start
+        t_eval = max(0.0, min(t_rel, self._duration))
+        sample.position = np.asarray(self._ctrl.position(t_eval), dtype=float).copy()
+        sample.velocity = np.asarray(self._ctrl.velocity(t_eval), dtype=float).copy()
+        sample.acceleration = np.asarray(
+            self._ctrl.acceleration(t_eval), dtype=float).copy()
+
+        # Past the segment end, freeze on the exact target with zero motion.
+        # The integrator stops once ‖v‖ ≤ settle_velocity, which can leave
+        # the last grabbed sample a few centimetres short of the waypoint;
+        # pin the outgoing reference to the requested target so the
+        # controller does not see a residual offset during the hover plateau.
+        if t_rel >= self._duration:
+            sample.position = self._target_wp.copy()
+            sample.velocity = np.zeros(3, dtype=float)
+            sample.acceleration = np.zeros(3, dtype=float)
+        return sample
 
     def provided_reference_fields(self) -> ReferenceField:
         return make_mask([

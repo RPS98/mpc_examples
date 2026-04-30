@@ -1,9 +1,12 @@
 sim_config:
   # --- Simulation timing ------------------------------------------------------
-  sim_time: 45.0              # Hard cap on simulated time (s). The run ends
+  sim_time: 110.0             # Hard cap on simulated time (s). The run ends
                               # at min(mission_end + hover_time, sim_time),
                               # even if that truncates the hover phase or the
                               # mission itself. Must be > 0.
+                              # Sized for the 10-waypoint demanding mission:
+                              # ~46.86 m total path / 1 m/s + 10 hops * 5 s
+                              # settle = 96.86 s + 10 s hover = 106.86 s.
   model_dt: 0.001             # Physics model timestep - 1000 Hz
   controller_dt: 0.002        # INDI + IMU update timestep - 500 Hz
   mpc_dt: 0.01                # MPC control timestep - 100 Hz
@@ -12,14 +15,17 @@ sim_config:
   # --- Mission parameters -----------------------------------------------------
   max_speed: 1.0              # m/s, used by generators and scheduler
   hover_time: 10.0            # Seconds to hover after the last waypoint
-  settle_margin_s: 10.0        # Extra time added to every waypoint hop (stabilisation)
+  settle_margin_s: 5.0        # Extra time added to every waypoint hop (stabilisation).
+                              # 2x worst observed transient (~2-3 s to ±5 cm)
+                              # for any of the 4 controllers in this vehicle,
+                              # 5x worst replan time across all generators.
   path_facing: true
 
   # --- Logging / runtime ------------------------------------------------------
   output_format: mcap         # Output format: "mcap" (default) or "csv"
   benchmark: false            # When true, disables CSV logging for pure timing runs.
   silent: true                # When true, suppresses progress bar output.
-  parallel: false             # When true, the entry-point launches one worker
+  parallel: true              # When true, the entry-point launches one worker
                               # (std::thread in C++, subprocess in Python) per
                               # enabled case. CLI flag --parallel forces true.
                               # Note: combine with controller_delay_mode: fixed
@@ -40,40 +46,105 @@ sim_config:
   generator_delay_fixed_s: 0.0
 
   # --- Waypoints (world frame, m) ---------------------------------------------
+  # Demanding 10-waypoint mission covering all 3 axes in close (1 m) and
+  # far (5-13.7 m) variants, plus 3-axis combined diagonals (close, far,
+  # medium). Initial state of the simulator is (0, 0, 0); the first
+  # waypoint acts as takeoff. Z stays >= 6 m for the whole mission.
   waypoints:
+    # Takeoff: Z far, single-axis (10 m)
     - [00.0, 00.0, 10.0]
-    - [10.0, 00.0, 10.0]
-    # - [10.0, 10.0, 20.0]
-    # - [00.0, 10.0, 20.0]
-    # - [00.0, 00.0, 10.0]
+    # Close single-axis hops (1 m each)
+    - [01.0, 00.0, 10.0]    # +X close
+    - [01.0, 01.0, 10.0]    # +Y close
+    - [01.0, 01.0, 11.0]    # +Z close
+    # Far single-axis hops (5 m each)
+    - [06.0, 01.0, 11.0]    # +X far
+    - [06.0, 06.0, 11.0]    # +Y far
+    - [06.0, 06.0, 06.0]    # -Z far (descent)
+    # Close 3-axis combined diagonal (~1.73 m)
+    - [07.0, 07.0, 07.0]
+    # Far 3-axis combined diagonal (~13.67 m, sign reversed in X and Y)
+    - [-2.0, -2.0, 12.0]
+    # Medium 3-axis combined return to home (~3.46 m)
+    - [00.0, 00.0, 10.0]
 
   # --- Batch of controller × generator cases ----------------------------------
-  # A single list of runs consumed by two executables:
+  # Single list of runs consumed by two executables:
   #   - position_examples     picks entries whose generator is `waypoints`.
   #   - trajectory_examples   picks entries whose generator is `gcopter`,
   #                           `jerk_limited`, `dynamic` or `mav_traj_gen`.
   # Any enabled entry outside a binary's scope is skipped with a log-info.
-  # `generator_config` overrides the default YAML path for that generator;
-  # it lets the two `waypoints` cases share the same adapter while using
-  # different tunings (distance-clamped for PID, raw target for MPC-Position).
+  #
+  # Each entry declares the four fields explicitly (controller_config and
+  # generator_config) so the YAML is the single source of truth about
+  # which tuning each combination uses — no hidden factory defaults.
+  #
+  # `enabled: true|false` gates inclusion in batch runs (run_all.sh,
+  # run_position_examples, run_trajectory_examples). Single scripts under
+  # scripts/single/* pass both --only-controller and --only-generator and
+  # therefore execute their combination regardless of the `enabled` flag.
   runs:
     # --- consumed by position_examples ---
-    - { controller: pid,            generator: waypoints,    enabled: true }
-    - { controller: mpc_position,   generator: waypoints,    enabled: true,
-        generator_config: configs/generators/config_waypoints_mpc.yaml }
+    - controller: pid
+      generator: waypoints
+      enabled: true
+      controller_config: configs/controllers/config_pid.yaml
+      generator_config: configs/generators/config_waypoints.yaml
+
+    - controller: mpc_position
+      generator: waypoints
+      enabled: true
+      controller_config: configs/controllers/config_mpc.yaml
+      generator_config: configs/generators/config_waypoints_mpc.yaml
+
     # --- consumed by trajectory_examples ---
     # All pid + trajectory cases use PidTrajectoryGeometricController
     # (parallel pos+vel feedback → acc, via TrajectoryController) and
     # config_pid_trajectory.yaml.
-    - { controller: pid,            generator: gcopter,      enabled: true,
-        controller_config: configs/controllers/config_pid_trajectory.yaml }
-    - { controller: pid,            generator: jerk_limited, enabled: true,
-        controller_config: configs/controllers/config_pid_trajectory.yaml }
-    - { controller: pid,            generator: dynamic,      enabled: true,
-        controller_config: configs/controllers/config_pid_trajectory.yaml }
-    - { controller: pid,            generator: mav_traj_gen, enabled: true,
-        controller_config: configs/controllers/config_pid_trajectory.yaml }
-    - { controller: mpc_trajectory, generator: gcopter,      enabled: true }
-    - { controller: mpc_trajectory, generator: jerk_limited, enabled: true }
-    - { controller: mpc_trajectory, generator: dynamic,      enabled: true }
-    - { controller: mpc_trajectory, generator: mav_traj_gen, enabled: true }
+    - controller: pid
+      generator: gcopter
+      enabled: true
+      controller_config: configs/controllers/config_pid_trajectory.yaml
+      generator_config: configs/generators/config_gcopter.yaml
+
+    - controller: pid
+      generator: jerk_limited
+      enabled: true
+      controller_config: configs/controllers/config_pid_trajectory.yaml
+      generator_config: configs/generators/config_jerk_limited.yaml
+
+    - controller: pid
+      generator: dynamic
+      enabled: true
+      controller_config: configs/controllers/config_pid_trajectory.yaml
+      generator_config: configs/generators/config_dynamic.yaml
+
+    - controller: pid
+      generator: mav_traj_gen
+      enabled: true
+      controller_config: configs/controllers/config_pid_trajectory.yaml
+      generator_config: configs/generators/config_mav_traj_gen.yaml
+
+    - controller: mpc_trajectory
+      generator: gcopter
+      enabled: true
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_gcopter.yaml
+
+    - controller: mpc_trajectory
+      generator: jerk_limited
+      enabled: true
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_jerk_limited.yaml
+
+    - controller: mpc_trajectory
+      generator: dynamic
+      enabled: true
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_dynamic.yaml
+
+    - controller: mpc_trajectory
+      generator: mav_traj_gen
+      enabled: true
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_mav_traj_gen.yaml

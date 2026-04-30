@@ -18,27 +18,34 @@ controller:
   position:
     # Sized so kp * d_max ≈ max_speed (with d_max from config_waypoints.yaml,
     # max_speed from config_example.yaml): at the maximum carrot offset the
-    # commanded velocity saturates exactly at the cruise limit, with no
-    # excess push that would build inertia past the waypoint. Anything
-    # larger sustains a surplus during the hop and produces overshoot at
-    # the destination; anything smaller never reaches max_speed.
-    kp: [0.5, 0.5, 0.7]
+    # commanded velocity saturates exactly at the cruise limit. With
+    # d_max = 2.0 m and max_speed = 1.0 m/s, kp = 0.55 gives kp * d_max =
+    # 1.1, slightly above the clamp so the controller commits to the
+    # cruise speed faster while still relying on the internal velocity
+    # saturation to avoid overshoot.
+    kp: [0.55, 0.55, 0.75]
     ki: [0.0, 0.0, 0.0]
     kd: [0.0, 0.0, 0.0]
     antiwindup_cte: 1.0
     alpha: 0.2
   velocity:
-    # kd is the dominant brake when the position-PID releases its velocity
-    # command at the waypoint: it damps the residual velocity error during
-    # the final approach without slowing cruise (where the velocity error
-    # itself is small).
+    # kd dominates the braking transient when the position-PID releases its
+    # velocity command at the waypoint and provides the damping needed
+    # during diagonal direction reversals (e.g. seg 8 → seg 9 of the demo
+    # mission). ki kept at 0 because integral term mostly hurt the long
+    # 13.7 m diagonal in the empirical sweep (2026-04-30) by lengthening
+    # the settle of the final segment with leftover wind-up.
     kp: [1.6, 1.6, 2.0]
     ki: [0.0, 0.0, 0.0]
-    kd: [1.2, 1.2, 1.8]
+    kd: [1.3, 1.3, 1.8]
     antiwindup_cte: 0.4
     alpha: 0.1
     saturation_upper: [10.0, 10.0, 15.0]
     saturation_lower: [-10.0, -10.0, -15.0]
   geometric:
     mass: 1.140
-    rotation_kp: [4.0, 4.0, 2.0]
+    # Faster attitude response for combined diagonal hops where the tilt
+    # reference changes simultaneously with body-frame translation. Empirical
+    # sweep (2026-04-30) showed [6, 6, 3] cuts seg 9 settle from 15.5 s
+    # (rotation_kp=[4,4,2] baseline) to 10.7 s with no jerk penalty.
+    rotation_kp: [6.0, 6.0, 3.0]

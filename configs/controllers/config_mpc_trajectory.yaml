@@ -20,11 +20,19 @@ mpc:
     # mav_traj_gen stay at <1% / -23% (their reference shape sets the
     # ceiling, not the cost). Above 4.0 the marginal v-overshoot
     # reduction shrinks and position rmse on jerk_limited starts
-    # climbing. A hard <2% bound would require a soft slack on |v|
-    # (acados regen) and is not part of this gain-only tuning.
-    Q: [1.0, 1.0, 1.5, 0.1, 0.1, 5.0, 4.0, 4.0, 4.0]
+    # climbing.
+    #
+    # Q_pos = [3, 3, 4.5] is the empirical sweet spot from the
+    # 2026-04-30 sweep on the demanding mission, averaged across all
+    # 4 generators (jerk_limited, gcopter, dynamic, mav_traj_gen):
+    # ×1.5 hurts gcopter (settle 4.49 → 4.78), ×4 hurts gcopter again
+    # (4.49 → 4.53), ×3 is the only multiplier that wins on every
+    # generator (jerk_limited 6.48 → 6.32, gcopter 4.49 → 4.43,
+    # dynamic 4.21 → 3.90, mav_traj_gen 5.01 → 4.99) with overshoot
+    # essentially unchanged at ≤ 0.002 m.
+    Q: [3.0, 3.0, 4.5, 0.1, 0.1, 5.0, 4.0, 4.0, 4.0]
     # Weight for end states:
-    Qe: [1.0, 1.0, 1.8, 0.1, 0.1, 5.0, 4.0, 4.0, 4.0]
+    Qe: [3.0, 3.0, 4.5, 0.1, 0.1, 5.0, 4.0, 4.0, 4.0]
     # Weight for control inputs: [thrust, wx, wy, wz]
     R: [1.0, 2.0, 2.0, 1.3]
   constraints:

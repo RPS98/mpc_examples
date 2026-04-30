@@ -13,11 +13,15 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "utils/example_config_utils.hpp"
 #include "utils/utils.hpp"
 
 namespace mpc_examples::adapters {
+
+namespace tg = trajectory_generator_jerk_limited;
 
 namespace {
 
@@ -50,101 +54,108 @@ JerkLimitedGenerator::Config JerkLimitedGenerator::loadConfigFromYaml(const std:
 
 void JerkLimitedGenerator::initialize(const mav_model::State& initial_state,
                                       const ExampleConfig& example_cfg) {
-  path_facing_  = example_cfg.path_facing;
-  has_prev_t_   = false;
-  prev_t_       = 0.0;
-  yaw_ref_hold_ = quaternionToEuler(initial_state.getOrientationVector()).z();
-
   if (example_cfg.max_speed <= 0.0) {
     throw std::invalid_argument(
         "JerkLimitedGenerator: ExampleConfig::max_speed must be > 0 (set in config_example.yaml).");
   }
-  trajectory_generator_jerk_limited::TrajectoryParameters params;
-  params.max_speed          = example_cfg.max_speed;
-  params.max_acceleration   = cfg_.max_acceleration;
-  params.max_jerk           = cfg_.max_jerk;
-  params.max_tracking_error = cfg_.max_tracking_error;
+  path_facing_  = example_cfg.path_facing;
+  has_prev_t_   = false;
+  prev_t_       = 0.0;
+  yaw_ref_hold_ = quaternionToEuler(initial_state.getOrientationVector()).z();
+  max_speed_    = example_cfg.max_speed;
 
-  ctrl_ = std::make_unique<trajectory_generator_jerk_limited::WaypointTrajectoryController>(params);
-  const Eigen::Vector3d p0 = initial_state.getPositionVector();
-  ctrl_->reset(p0);
-  target_wp_ = p0;
+  hold_pos_        = initial_state.getPositionVector();
+  target_wp_       = hold_pos_;
+  duration_        = 0.0;
+  t_segment_start_ = 0.0;
+  has_plan_        = false;
 
-  last_sample_.position     = p0;
-  last_sample_.velocity     = Eigen::Vector3d::Zero();
-  last_sample_.acceleration = Eigen::Vector3d::Zero();
-  last_sample_.yaw          = yaw_ref_hold_;
-  last_sample_t_            = 0.0;
+  // Construct the offline solver once; it is reused across segments via generate().
+  tg::GeneratorConfig generator_cfg;
+  generator_cfg.params.max_speed          = example_cfg.max_speed;
+  generator_cfg.params.max_acceleration   = cfg_.max_acceleration;
+  generator_cfg.params.max_jerk           = cfg_.max_jerk;
+  generator_cfg.params.max_tracking_error = cfg_.max_tracking_error;
+  ctrl_ = std::make_unique<tg::TrajectoryGenerator>(generator_cfg);
 }
 
 void JerkLimitedGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
-                                             const mav_model::State& /*state*/,
-                                             double /*t_start*/) {
-  target_wp_ = next_waypoint;
-  // The jerk-limited controller integrates continuously; no explicit replan
-  // call is needed — subsequent update() steps simply drive toward target_wp_.
-}
+                                             const mav_model::State& state,
+                                             double t_start) {
+  const Eigen::Vector3d p0 = state.getPositionVector();
+  target_wp_               = next_waypoint;
+  hold_pos_                = next_waypoint;
+  t_segment_start_         = t_start;
 
-void JerkLimitedGenerator::update(double t, const mav_model::State& state) {
-  if (!ctrl_) {
-    throw std::runtime_error("JerkLimitedGenerator: initialize() must be called before update().");
+  if ((next_waypoint - p0).norm() < 1e-6) {
+    has_plan_ = false;
+    duration_ = 0.0;
+    return;
   }
 
+  // Two-waypoint hop. The one-shot API resets internally to waypoints[0]
+  // with v=0, a=0 — same as the rest of p2p adapters (gcopter, dynamic,
+  // mav_traj_gen). The settle margin in the WaypointScheduler absorbs the
+  // resulting v0 discontinuity at segment boundaries.
+  std::vector<tg::Waypoint> wps = {tg::Waypoint(p0), tg::EndWaypoint(next_waypoint)};
+  has_plan_                     = ctrl_->generate(wps, max_speed_);
+  if (!has_plan_) {
+    duration_ = 0.0;
+    return;
+  }
+  duration_ = ctrl_->duration();
+}
+
+void JerkLimitedGenerator::update(double t, const mav_model::State& /*state*/) {
   const double dt = has_prev_t_ ? std::max(t - prev_t_, 0.0) : 0.0;
   prev_t_         = t;
   has_prev_t_     = true;
 
-  const Eigen::Vector3d position = state.getPositionVector();
-
-  if (dt > 0.0) {
-    const auto set            = ctrl_->update(dt, position, target_wp_);
-    last_sample_.position     = set.position;
-    last_sample_.velocity     = set.velocity;
-    last_sample_.acceleration = set.acceleration;
+  if (!has_plan_) {
+    return;
   }
-  last_sample_t_ = t;
+  const double t_local = std::clamp(t - t_segment_start_, 0.0, duration_);
 
-  double yaw_used = yaw_ref_hold_;
   if (path_facing_) {
-    const double horiz_speed = last_sample_.velocity.head<2>().norm();
+    const Eigen::Vector3d vel = ctrl_->velocity(t_local);
+    const double horiz_speed  = vel.head<2>().norm();
     if (horiz_speed > kMinHorizontalSpeedForYaw) {
-      const double yaw_target = std::atan2(last_sample_.velocity.y(), last_sample_.velocity.x());
+      const double yaw_target = std::atan2(vel.y(), vel.x());
       double yaw_delta        = wrapToPi(yaw_target - yaw_ref_hold_);
-      const double step       = kMaxYawRateRefRadPerSec * (dt > 0.0 ? dt : 0.0);
+      const double step       = kMaxYawRateRefRadPerSec * dt;
       yaw_delta               = std::clamp(yaw_delta, -step, step);
       yaw_ref_hold_           = yaw_ref_hold_ + yaw_delta;
-      yaw_used                = yaw_ref_hold_;
     }
   } else {
-    yaw_used = 0.0;
+    yaw_ref_hold_ = 0.0;
   }
-  last_sample_.yaw = yaw_used;
 }
 
 framework::ReferenceSample JerkLimitedGenerator::evaluate(double t) const {
-  // Forward-project the last stage-0 sample kinematically so that the MPC
-  // horizon stages are consistent (pos[k+1] ≈ pos[k] + vel*dt). The S-curve
-  // integrator is stateful and would be mutated by a proper look-ahead, so we
-  // use a constant-velocity extrapolation, clamped so the horizon cannot
-  // overshoot the current waypoint.
-  const double dt              = t - last_sample_t_;
-  framework::ReferenceSample s = last_sample_;
-  if (dt <= 0.0) {
-    return s;
+  framework::ReferenceSample sample;
+  sample.yaw = yaw_ref_hold_;
+
+  if (!has_plan_) {
+    sample.position = hold_pos_;
+    return sample;
   }
-  const Eigen::Vector3d predicted = last_sample_.position + last_sample_.velocity * dt;
-  const Eigen::Vector3d to_target = target_wp_ - last_sample_.position;
-  const double remaining          = to_target.norm();
-  const double travel             = last_sample_.velocity.norm() * dt;
-  if (remaining <= 1e-9 || travel >= remaining) {
-    s.position = target_wp_;
-    s.velocity.setZero();
-  } else {
-    s.position = predicted;
-    s.velocity = last_sample_.velocity;
+  const double t_rel  = t - t_segment_start_;
+  const double t_eval = std::clamp(t_rel, 0.0, duration_);
+  sample.position     = ctrl_->position(t_eval);
+  sample.velocity     = ctrl_->velocity(t_eval);
+  sample.acceleration = ctrl_->acceleration(t_eval);
+
+  // Past the segment end, freeze on the exact target with zero motion.
+  // The integrator stops once ‖v‖ ≤ settle_velocity, which can leave the
+  // last grabbed sample a few centimetres short of the waypoint; pin the
+  // outgoing reference to the requested target so the controller does not
+  // see a residual offset during the hover plateau.
+  if (t_rel >= duration_) {
+    sample.position = target_wp_;
+    sample.velocity.setZero();
+    sample.acceleration.setZero();
   }
-  s.acceleration.setZero();
-  return s;
+  return sample;
 }
 
 }  // namespace mpc_examples::adapters
