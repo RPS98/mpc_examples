@@ -115,13 +115,13 @@ sim_config:
 
     - controller: pid
       generator: dynamic
-      enabled: true
+      enabled: false
       controller_config: configs/controllers/config_pid_trajectory.yaml
       generator_config: configs/generators/config_dynamic.yaml
 
     - controller: pid
       generator: mav_traj_gen
-      enabled: true
+      enabled: false
       controller_config: configs/controllers/config_pid_trajectory.yaml
       generator_config: configs/generators/config_mav_traj_gen.yaml
 
@@ -139,12 +139,12 @@ sim_config:
 
     - controller: mpc_trajectory
       generator: dynamic
-      enabled: true
+      enabled: false
       controller_config: configs/controllers/config_mpc_trajectory.yaml
       generator_config: configs/generators/config_dynamic.yaml
 
     - controller: mpc_trajectory
       generator: mav_traj_gen
-      enabled: true
+      enabled: false 
       controller_config: configs/controllers/config_mpc_trajectory.yaml
       generator_config: configs/generators/config_mav_traj_gen.yaml

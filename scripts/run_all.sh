@@ -16,8 +16,9 @@
 #   --lang=both
 #   --run-id auto-generated as YYYYmmdd_HHMMSS (shared by both langs so the
 #   CSVs land under simulator_logs/<run_id>/{cpp,py}/).
-#   The dashboard is opened interactively AND saved to <run>/plots/*.png.
-#     --no-show: skip the matplotlib windows (e.g. on CI / headless runs).
+#   The dashboard is saved to <run>/plots/*.png; matplotlib windows are
+#   NOT opened by default (use --show to open them).
+#     --show:    open the interactive matplotlib windows (blocks on Enter).
 #     --no-save: skip writing PNGs to disk.
 #
 # The ``py`` backend requires the CMake build to have run at least once so
@@ -39,9 +40,9 @@ export LD_LIBRARY_PATH="${REPO_ROOT}/build/mav_model/mav_model:\
 ${REPO_ROOT}/build/mav_controllers/libs/pid_controller:\
 ${LD_LIBRARY_PATH:-}"
 
-LANG_SEL="both"
+LANG_SEL="cpp"
 RUN_ID=""
-SHOW=1
+SHOW=0
 SAVE=1
 for arg in "$@"; do
   case "$arg" in
@@ -71,6 +72,13 @@ OUT_DIR="simulator_logs/${RUN_ID}"
 mkdir -p "$OUT_DIR"
 
 echo "[run_all] run_id=${RUN_ID} · output_dir=${OUT_DIR} · lang=${LANG_SEL}"
+
+# Wall-clock timer: SECONDS is a Bash builtin that increments from this
+# script's startup. We snapshot it now and print the elapsed at the end so
+# the user knows how long the run actually took.
+START_TS=$SECONDS
+START_HUMAN="$(date +%H:%M:%S)"
+echo "[run_all] started at ${START_HUMAN}"
 
 EXAMPLE_CFG="configs/simulation/config_example.yaml"
 SIM_CFG="configs/simulation/config_simulator.yaml"
@@ -112,11 +120,11 @@ case "$LANG_SEL" in
 esac
 
 echo ""
-echo "[run_all] reviewing run (decode + metrics + summary + dashboard)"
+echo "[run_all] reviewing run via plot.sh"
 REVIEW_FLAGS=()
 [[ "$SHOW" -eq 0 ]] && REVIEW_FLAGS+=(--no-show)
 [[ "$SAVE" -eq 0 ]] && REVIEW_FLAGS+=(--no-save)
-python3 -m mav_flight_review.review --run-dir "$OUT_DIR" "${REVIEW_FLAGS[@]}" || true
+"${SCRIPT_DIR}/plot.sh" "$OUT_DIR" "${REVIEW_FLAGS[@]}" || true
 
 echo ""
 if [[ "$SAVE" -eq 1 ]]; then
@@ -125,3 +133,10 @@ if [[ "$SAVE" -eq 1 ]]; then
 fi
 echo "[run_all] summary csv:  $OUT_DIR/metrics/summary.csv"
 echo "[run_all] done · $OUT_DIR"
+
+ELAPSED=$((SECONDS - START_TS))
+HMS=$(printf '%02d:%02d:%02d' \
+    $((ELAPSED / 3600)) \
+    $(((ELAPSED % 3600) / 60)) \
+    $((ELAPSED % 60)))
+echo "[run_all] wall-clock: ${HMS} (started ${START_HUMAN}, ${ELAPSED}s total)"

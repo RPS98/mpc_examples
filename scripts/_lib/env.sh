@@ -47,13 +47,7 @@ ensure_output_dir() {
 post_run_review() {
   local run_dir="${1:?post_run_review: run_dir required}"
   shift
-  local no_show="" no_save=""
-  for arg in "$@"; do
-    case "${arg}" in --no-show) no_show="--no-show" ;; --no-save) no_save="--no-save" ;; esac
-  done
-
   echo ""
-  echo "[review ] ${run_dir}"
-  python3 -m mav_flight_review.review \
-    --run-dir "${run_dir}" ${no_show} ${no_save} || true
+  echo "[plot   ] ${run_dir}"
+  "${SCRIPT_DIR_ROOT}/plot.sh" "${run_dir}" "$@" || true
 }

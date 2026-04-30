@@ -2,23 +2,28 @@
 # Copyright 2025 Universidad Politécnica de Madrid
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# Unified visualisation entry point. Opens every relevant matplotlib window
-# for either a full run directory or an explicit list of log files:
+# Single shell entry-point for the post-simulation phase. Two modes:
 #
-#   1. Main time-series dashboard (pose, velocity, thrust, references, error).
-#   2. 3D trajectory.
-#   3. Extras (topics outside the well-known roles), if any.
-#   4. Aggregated metrics (bars + boxplots, run-dir mode only).
+#   1. Run mode  — operates on a full run directory:
+#        scripts/plot.sh                       (newest populated run)
+#        scripts/plot.sh <run_dir>             (explicit run)
+#        scripts/plot.sh <run_dir> [flags]     (forwarded to review)
+#      Defers to ``mav_flight_review.review``: decodes every MCAP once,
+#      computes metrics, writes <run>/metrics/summary.csv, prints the
+#      summary table on stdout and renders the per-axis plots under
+#      <run>/plots/. Forwarded flags include --no-show, --no-save,
+#      --no-overlay, --dpi N, --workers N.
 #
-# Usage:
-#   scripts/plot.sh                         (newest populated run, all windows)
-#   scripts/plot.sh <run_dir>               (explicit run, all windows)
-#   scripts/plot.sh <log1> [log2 ...]       (single or overlay, no metrics)
-#   scripts/plot.sh [... --no-show --no-save --save PATH ...]
+#   2. File mode — overlays a hand-picked list of MCAPs without a run
+#      directory (no metrics, no aggregated panel):
+#        scripts/plot.sh <log1> [log2 ...] [flags]
+#      Defers to ``mav_flight_review.cli``.
 #
-# Run mode automatically generates <run>/metrics/summary.csv via
-# mav_flight_review.compute_metrics when it is missing, so the metrics
-# window always has data when the aggregate logs are available.
+# This script is the canonical place where shell code talks to the
+# Python review modules. ``run_all.sh`` and the per-case wrappers
+# (``scripts/_lib/env.sh::post_run_review``, used by every
+# ``scripts/single/*.sh``) invoke this script — there is no other shell
+# path to the post-sim pipeline.
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "${SCRIPT_DIR}/_lib/env.sh"
@@ -31,13 +36,8 @@ if [[ "${MODE}" == "files" ]]; then
     "${LOG_FILES[@]}" "${EXTRA_ARGS[@]}"
 fi
 
-# Run mode: ensure summary.csv exists before invoking the plotter.
-summary_path="${RUN_DIR%/}/metrics/summary.csv"
-if [[ ! -f "${summary_path}" ]]; then
-  echo "[info] ${summary_path} missing; running compute_metrics..." >&2
-  python3 -m mav_flight_review.compute_metrics --run-dir "${RUN_DIR}" \
-    || echo "[warn] compute_metrics failed; aggregated window will be partial" >&2
-fi
-
-exec python3 -m mav_flight_review.cli \
+# Run mode: defer to the unified review entry-point. Decodes each MCAP
+# once, computes metrics, writes summary.csv, prints the summary table
+# and renders the per-axis plots — all in the same process.
+exec python3 -m mav_flight_review.review \
   --run-dir "${RUN_DIR}" "${EXTRA_ARGS[@]}"
