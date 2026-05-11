@@ -89,21 +89,24 @@ class LogRow:
 
 
 # Custom topic names (kept in sync with examples_cpp/src/framework/unified_mcap_logger.cpp).
-_TOPIC_CONTROLLER_COMPUTE = '/mpc_examples/controller_compute_time_us'
-_TOPIC_GENERATOR_UPDATE = '/mpc_examples/generator_update_time_us'
-_TOPIC_GENERATOR_EVAL = '/mpc_examples/generator_eval_time_us'
-_TOPIC_CONTROLLER_DELAY = '/mpc_examples/controller_delay_applied_us'
-_TOPIC_GENERATOR_DELAY = '/mpc_examples/generator_delay_applied_us'
-_TOPIC_MAX_SPEED = '/mpc_examples/max_speed'
-_TOPIC_WAYPOINT_INDEX = '/mpc_examples/waypoint_index'
-_TOPIC_HOVER_ACTIVE = '/mpc_examples/hover_active'
+# Aerostack2-native topic names. Aligned with
+# mav_flight_review/pybind/python/mav_flight_review/data_model.py so the
+# reviewer surfaces timing / mission extras from the same logger.
+_TOPIC_CONTROLLER_COMPUTE = '/drone0/debug/controller/compute_output_time'
+_TOPIC_GENERATOR_UPDATE = '/drone0/debug/behaviors/trajectory_generation/generation_time'
+_TOPIC_GENERATOR_EVAL = '/drone0/debug/behaviors/trajectory_generation/eval_time'
+_TOPIC_CONTROLLER_DELAY = '/drone0/debug/controller/delay_applied'
+_TOPIC_GENERATOR_DELAY = '/drone0/debug/behaviors/trajectory_generation/delay_applied'
+_TOPIC_MAX_SPEED = '/drone0/debug/mission/max_speed'
+_TOPIC_WAYPOINT_INDEX = '/drone0/debug/mission/waypoint_index'
+_TOPIC_HOVER_ACTIVE = '/drone0/debug/mission/hover_active'
 _TOPIC_MOTOR_SPEEDS = '/drone0/actuator_command/motor_speeds'
 _TOPIC_MOTION_REF_TRAJECTORY = '/drone0/motion_reference/trajectory'
 _TOPIC_MOTION_REF_POSITION = '/drone0/motion_reference/position'
-_TOPIC_META_CONTROLLER = '/mpc_examples/metadata/controller_name'
-_TOPIC_META_GENERATOR = '/mpc_examples/metadata/generator_name'
-_TOPIC_META_RUN_ID = '/mpc_examples/metadata/run_id'
-_TOPIC_META_LANGUAGE = '/mpc_examples/metadata/language'
+_TOPIC_META_CONTROLLER = '/drone0/debug/mission/metadata/controller_name'
+_TOPIC_META_GENERATOR = '/drone0/debug/mission/metadata/generator_name'
+_TOPIC_META_RUN_ID = '/drone0/debug/mission/metadata/run_id'
+_TOPIC_META_LANGUAGE = '/drone0/debug/mission/metadata/language'
 
 
 class UnifiedMcapLogger:

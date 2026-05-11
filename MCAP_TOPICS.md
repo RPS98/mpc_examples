@@ -74,19 +74,19 @@ Defined as constants in [unified_mcap_logger.cpp:18-22](examples_cpp/src/framewo
 
 | Topic | Type | Rate | Content |
 | --- | --- | --- | --- |
-| `/mpc_examples/controller_compute_time_us` | `std_msgs/msg/Float64` | `controller_dt` | Wall-clock duration of `IController::compute` |
-| `/mpc_examples/generator_update_time_us` | `std_msgs/msg/Float64` | `controller_dt` | Wall-clock duration of `ITrajectoryGenerator::update` |
-| `/mpc_examples/generator_eval_time_us` | `std_msgs/msg/Float64` | `controller_dt` | Wall-clock duration of `ITrajectoryGenerator::evaluate` |
-| `/mpc_examples/controller_delay_applied_us` | `std_msgs/msg/Float64` | `controller_dt` | Delay actually applied by `DelayBuffer` to the controller command |
-| `/mpc_examples/generator_delay_applied_us` | `std_msgs/msg/Float64` | `controller_dt` | Delay actually applied to the generator sample |
+| `/drone0/debug/controller/compute_output_time` | `std_msgs/msg/Float64` | `controller_dt` | Wall-clock duration of `IController::compute` |
+| `/drone0/debug/behaviors/trajectory_generation/generation_time` | `std_msgs/msg/Float64` | `controller_dt` | Wall-clock duration of `ITrajectoryGenerator::update` |
+| `/drone0/debug/behaviors/trajectory_generation/eval_time` | `std_msgs/msg/Float64` | `controller_dt` | Wall-clock duration of `ITrajectoryGenerator::evaluate` |
+| `/drone0/debug/controller/delay_applied` | `std_msgs/msg/Float64` | `controller_dt` | Delay actually applied by `DelayBuffer` to the controller command |
+| `/drone0/debug/behaviors/trajectory_generation/delay_applied` | `std_msgs/msg/Float64` | `controller_dt` | Delay actually applied to the generator sample |
 
 ### Scheduler state
 
 | Topic | Type | Rate | Content |
 | --- | --- | --- | --- |
-| `/mpc_examples/waypoint_index` | `std_msgs/msg/Int32` | `controller_dt` | Active waypoint index from `WaypointScheduler` |
-| `/mpc_examples/hover_active` | `std_msgs/msg/Int32` (0/1) | `controller_dt` | `1` once the mission is over and the hold-after-mission phase begins |
-| `/mpc_examples/max_speed` | `std_msgs/msg/Float64` | `controller_dt` | `sim_config.max_speed` (constant per run, single source of truth) |
+| `/drone0/debug/mission/waypoint_index` | `std_msgs/msg/Int32` | `controller_dt` | Active waypoint index from `WaypointScheduler` |
+| `/drone0/debug/mission/hover_active` | `std_msgs/msg/Int32` (0/1) | `controller_dt` | `1` once the mission is over and the hold-after-mission phase begins |
+| `/drone0/debug/mission/max_speed` | `std_msgs/msg/Float64` | `controller_dt` | `sim_config.max_speed` (constant per run, single source of truth) |
 
 ### Run metadata (single-shot at `t = 0`)
 
@@ -96,10 +96,10 @@ Emitted once in the `UnifiedMcapLogger` constructor
 
 | Topic | Type | Content |
 | --- | --- | --- |
-| `/mpc_examples/metadata/controller_name` | `std_msgs/msg/String` | E.g. `pid`, `mpc_position`, `mpc_trajectory` |
-| `/mpc_examples/metadata/generator_name` | `std_msgs/msg/String` | E.g. `waypoints`, `jerk_limited`, `gcopter`, `dynamic`, `mav_traj_gen` |
-| `/mpc_examples/metadata/run_id` | `std_msgs/msg/String` | `YYYYmmdd_HHMMSS` |
-| `/mpc_examples/metadata/language` | `std_msgs/msg/String` | `cpp` or `py` |
+| `/drone0/debug/mission/metadata/controller_name` | `std_msgs/msg/String` | E.g. `pid`, `mpc_position`, `mpc_trajectory` |
+| `/drone0/debug/mission/metadata/generator_name` | `std_msgs/msg/String` | E.g. `waypoints`, `jerk_limited`, `gcopter`, `dynamic`, `mav_traj_gen` |
+| `/drone0/debug/mission/metadata/run_id` | `std_msgs/msg/String` | `YYYYmmdd_HHMMSS` |
+| `/drone0/debug/mission/metadata/language` | `std_msgs/msg/String` | `cpp` or `py` |
 
 ### Simulated clock (auto-emitted)
 

@@ -14,24 +14,26 @@ namespace mpc_examples::framework {
 
 namespace {
 
-// Custom scalar / vector topics (ROS 2 std_msgs).
-constexpr const char* kTopicControllerCompute   = "/mpc_examples/controller_compute_time_us";
-constexpr const char* kTopicGeneratorUpdate     = "/mpc_examples/generator_update_time_us";
-constexpr const char* kTopicGeneratorEval       = "/mpc_examples/generator_eval_time_us";
-constexpr const char* kTopicControllerDelay     = "/mpc_examples/controller_delay_applied_us";
-constexpr const char* kTopicGeneratorDelay      = "/mpc_examples/generator_delay_applied_us";
-constexpr const char* kTopicMaxSpeed            = "/mpc_examples/max_speed";
-constexpr const char* kTopicWaypointIndex       = "/mpc_examples/waypoint_index";
-constexpr const char* kTopicHoverActive         = "/mpc_examples/hover_active";
+// Aerostack2-native topic names. Aligned with
+// mav_flight_review/pybind/python/mav_flight_review/data_model.py so the
+// reviewer surfaces timing / mission extras from the same logger.
+constexpr const char* kTopicControllerCompute   = "/drone0/debug/controller/compute_output_time";
+constexpr const char* kTopicGeneratorUpdate     = "/drone0/debug/behaviors/trajectory_generation/generation_time";
+constexpr const char* kTopicGeneratorEval       = "/drone0/debug/behaviors/trajectory_generation/eval_time";
+constexpr const char* kTopicControllerDelay     = "/drone0/debug/controller/delay_applied";
+constexpr const char* kTopicGeneratorDelay      = "/drone0/debug/behaviors/trajectory_generation/delay_applied";
+constexpr const char* kTopicMaxSpeed            = "/drone0/debug/mission/max_speed";
+constexpr const char* kTopicWaypointIndex       = "/drone0/debug/mission/waypoint_index";
+constexpr const char* kTopicHoverActive         = "/drone0/debug/mission/hover_active";
 constexpr const char* kTopicMotorSpeeds         = "/drone0/actuator_command/motor_speeds";
 constexpr const char* kTopicMotionRefTrajectory = "/drone0/motion_reference/trajectory";
 constexpr const char* kTopicMotionRefPosition   = "/drone0/motion_reference/position";
 
 // Metadata topics (emitted once at t=0).
-constexpr const char* kTopicMetaController = "/mpc_examples/metadata/controller_name";
-constexpr const char* kTopicMetaGenerator  = "/mpc_examples/metadata/generator_name";
-constexpr const char* kTopicMetaRunId      = "/mpc_examples/metadata/run_id";
-constexpr const char* kTopicMetaLanguage   = "/mpc_examples/metadata/language";
+constexpr const char* kTopicMetaController = "/drone0/debug/mission/metadata/controller_name";
+constexpr const char* kTopicMetaGenerator  = "/drone0/debug/mission/metadata/generator_name";
+constexpr const char* kTopicMetaRunId      = "/drone0/debug/mission/metadata/run_id";
+constexpr const char* kTopicMetaLanguage   = "/drone0/debug/mission/metadata/language";
 
 Eigen::Vector4d toQuatWxyz(const Eigen::Quaterniond& q) { return {q.w(), q.x(), q.y(), q.z()}; }
 

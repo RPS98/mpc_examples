@@ -27,7 +27,7 @@ namespace mpc_examples::framework {
 
 /**
  * @brief Run-level metadata emitted once as std_msgs/String messages under
- * ``/mpc_examples/metadata/*`` at the beginning of the MCAP.
+ * ``/drone0/debug/mission/metadata/*`` at the beginning of the MCAP.
  *
  * Field semantics match the previous CSV backend so consumers that parsed the
  * ``# controller:`` / ``# generator:`` comment block can be ported 1:1 by
@@ -107,10 +107,11 @@ struct LogRow {
  *   - ``/drone0/actuator_command/thrust``       : commanded thrust (Thrust).
  *   - ``/drone0/actuator_command/twist``    : commanded body rates (TwistStamped).
  *   - ``/drone0/actuator_command/motor_speeds`` : per-rotor speeds (Float64MultiArray).
- *   - ``/mpc_examples/{controller,generator}_*`` : compute times / delays (Float64).
- *   - ``/mpc_examples/waypoint_index`` / ``/mpc_examples/hover_active`` (Int32).
- *   - ``/mpc_examples/max_speed`` (Float64).
- *   - ``/mpc_examples/metadata/{controller_name,generator_name,run_id,language}``
+ *   - ``/drone0/debug/controller/{compute_output_time,delay_applied}``  (Float64).
+ *   - ``/drone0/debug/behaviors/trajectory_generation/{generation_time,eval_time,delay_applied}`` (Float64).
+ *   - ``/drone0/debug/mission/waypoint_index`` / ``/drone0/debug/mission/hover_active`` (Int32).
+ *   - ``/drone0/debug/mission/max_speed`` (Float64).
+ *   - ``/drone0/debug/mission/metadata/{controller_name,generator_name,run_id,language}``
  *     (String, emitted once at t=0).
  */
 class UnifiedMcapLogger {
