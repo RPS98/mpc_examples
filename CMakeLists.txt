@@ -47,16 +47,17 @@ include(CTest)
 # Workspace layout
 # ---------------------------------------------------------------------------
 # The MAV showcase libs (mav_simulator, mpc, generators, mav_flight_review)
-# used to live as git submodules under thirdparty/. They now live as sibling
-# directories under the project_controller_pmpc workspace root
-# (`<workspace>/mav_libs/<name>`), populated by `vcs import < pmpc.repos`.
+# used to live as git submodules under thirdparty/. They now live under
+# `<repo_root>/workspace/mav_libs/<name>`, populated by
+# `vcs import < pmpc.repos`.
 #
 # CMAKE_SOURCE_DIR == simulation/mav for this build. Two levels up is the
-# repo / workspace root.
-set(PMPC_WORKSPACE_ROOT "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
-    "Path to the project_controller_pmpc repo/workspace root (where mav_libs/ lives).")
-get_filename_component(PMPC_WORKSPACE_ROOT "${PMPC_WORKSPACE_ROOT}" ABSOLUTE)
-set(MAV_LIBS_DIR "${PMPC_WORKSPACE_ROOT}/mav_libs")
+# repo root (project_controller_pmpc/), inside which `workspace/` is the
+# subdirectory that vcs import targets.
+set(PMPC_REPO_ROOT "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
+    "Path to the project_controller_pmpc repo root (parent of `workspace/`).")
+get_filename_component(PMPC_REPO_ROOT "${PMPC_REPO_ROOT}" ABSOLUTE)
+set(MAV_LIBS_DIR "${PMPC_REPO_ROOT}/workspace/mav_libs")
 if(NOT IS_DIRECTORY "${MAV_LIBS_DIR}")
   message(FATAL_ERROR
     "${PROJECT_NAME}: MAV_LIBS_DIR=${MAV_LIBS_DIR} does not exist. "
