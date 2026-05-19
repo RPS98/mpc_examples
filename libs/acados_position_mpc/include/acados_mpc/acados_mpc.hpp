@@ -89,6 +89,9 @@ struct MPCData {
   OnlineParameters p_params;
   Reference reference;
   ReferenceEnd reference_end;
+  /// State predicted by the solver at stage 1 (one step ahead after applying
+  /// the first input). Filled after each successful solve().
+  State predicted_state_stage1;
 };
 
 /**
@@ -151,6 +154,15 @@ public:
    * @brief Get the MPCData pointer to modify the data.
    */
   MPCData* getData() { return &mpc_data_; }
+
+  /**
+   * @brief Linear velocity predicted at stage 1 of the last solve().
+   *
+   * @return std::array<double, 3> [vx, vy, vz] in world frame (m/s).
+   */
+  std::array<double, 3> getStage1Velocity() const {
+    return mpc_data_.predicted_state_stage1.getLinearVelocity();
+  }
 
   /**
    * @brief Get the OnlineParameters pointer to modify online parameters.

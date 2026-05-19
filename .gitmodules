@@ -1,28 +1,4 @@
-[submodule "thirdparty/mav_simulator"]
-	path = thirdparty/mav_simulator
-	url = git@github.com:RPS98/mav_simulator.git
-	branch = devel
-[submodule "thirdparty/mpc"]
-	path = thirdparty/mpc
-	url = git@github.com:RPS98/mpc.git
-	branch = refactor/library-example-split
-[submodule "thirdparty/dynamic_trajectory_generator"]
-	path = thirdparty/dynamic_trajectory_generator
-	url = git@github.com:RPS98/dynamic_trajectory_generator.git
-	branch = pybind_lib
-[submodule "thirdparty/gcopter_lib"]
-	path = thirdparty/gcopter_lib
-	url = git@github.com:RPS98/gcopter_lib.git
-	branch = main
-[submodule "thirdparty/trajectory_generator_jerk_limited"]
-	path = thirdparty/trajectory_generator_jerk_limited
-	url = git@github.com:RPS98/trajectory_generator_jerk_limited.git
-	branch = main
-[submodule "thirdparty/mav_trajectory_generation_lib"]
-	path = thirdparty/mav_trajectory_generation_lib
-	url = git@github.com:RPS98/mav_trajectory_generation_lib.git
-	branch = main
-[submodule "thirdparty/mav_flight_review"]
-	path = thirdparty/mav_flight_review
-	url = git@github.com:RPS98/mav_flight_review.git
-	branch = main
+# All MAV showcase libs that used to live as submodules here have been
+# elevated to <workspace>/mav_libs/ and are now managed by pmpc.repos
+# (see the repo-root README). This file is kept empty to make the migration
+# explicit and to avoid `git submodule init` confusion.

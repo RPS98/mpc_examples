@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "acados_mpc/acados_mpc_yaml.hpp"
+#include "controllers/mpc_speed_utils.hpp"
 #include "utils/example_config_utils.hpp"
 #include "utils/utils.hpp"
 
@@ -62,24 +63,14 @@ void setProgressiveReferences(acados_mpc::MPCData* mpc_data,
                                             desired_orientation.y(), desired_orientation.z()});
 }
 
-void updateSpeedConstraint(acados_mpc::MPC& mpc, double soft_speed_margin, double max_speed) {
-  if constexpr (acados_mpc::NonlinearConstraintBounds::Nh > 0) {
-    const double soft_speed = soft_speed_margin * max_speed;
-    const std::array<double, acados_mpc::NonlinearConstraintBounds::Nh> uh = {
-        {soft_speed * soft_speed}};
-    mpc.getNonlinearConstraintBounds()->setUh(uh);
-    mpc.updateNonlinearConstraintBounds();
-  }
-}
-
 }  // namespace
 
 MpcPositionController::MpcPositionController(const Config& cfg) : cfg_(cfg) {
   if (cfg_.mpc_yaml_path.empty()) {
     throw std::invalid_argument("MpcPositionController: mpc_yaml_path must be provided.");
   }
-  if (cfg_.soft_speed_margin <= 0.0) {
-    throw std::invalid_argument("MpcPositionController: soft_speed_margin must be > 0.");
+  if (cfg_.max_vel_percentage <= 0.0 || cfg_.max_vel_percentage > 1.0) {
+    throw std::invalid_argument("MpcPositionController: max_vel_percentage must be in (0, 1].");
   }
 }
 
@@ -89,9 +80,9 @@ MpcPositionController::Config MpcPositionController::loadConfigFromYaml(const st
   cfg.mpc_yaml_path = path;
 
   const YAML::Node mpc_node = root["mpc"];
-  if (mpc_node && mpc_node.IsMap() && mpc_node["soft_speed_margin"]) {
-    cfg.soft_speed_margin =
-        detail::readDoubleRequired(mpc_node["soft_speed_margin"], "mpc.soft_speed_margin");
+  if (mpc_node && mpc_node.IsMap() && mpc_node["max_vel_percentage"]) {
+    cfg.max_vel_percentage =
+        detail::readDoubleRequired(mpc_node["max_vel_percentage"], "mpc.max_vel_percentage");
   }
   return cfg;
 }
@@ -101,16 +92,21 @@ void MpcPositionController::initialize(const mav_model::State& /*initial_state*/
   if (example_cfg.mpc_dt <= 0.0) {
     throw std::invalid_argument("MpcPositionController: example_cfg.mpc_dt must be > 0.");
   }
-  if (example_cfg.max_speed <= 0.0) {
-    throw std::invalid_argument("MpcPositionController: example_cfg.max_speed must be > 0.");
-  }
 
   mpc_ = std::make_unique<acados_mpc::MPC>();
   acados_mpc::configureMpcFromYaml(*mpc_, cfg_.mpc_yaml_path);
-  updateSpeedConstraint(*mpc_, cfg_.soft_speed_margin, example_cfg.max_speed);
+
+  // Speed knobs derived from the YAML's `constraints.uh[0]` (= max_speed²),
+  // matching the aerostack2 `as2_position_mpc_plugin` convention. The ramp
+  // built by setProgressiveReferences() and the solver's runtime soft bound
+  // share v_ref by construction, so they cannot drift.
+  const double uh_default =
+      speed_utils::readUhDefault(*mpc_, "MpcPositionController");
+  v_ref_ =
+      speed_utils::deriveVRef(uh_default, cfg_.max_vel_percentage, "MpcPositionController");
+  speed_utils::updateSpeedConstraint(*mpc_, v_ref_);
 
   control_period_ = example_cfg.mpc_dt;
-  v_ref_          = example_cfg.max_speed;
   horizon_steps_  = mpc_->getPredictionSteps();
   dt_horizon_     = mpc_->getPredictionTimeStep();
 }
@@ -150,6 +146,9 @@ framework::ControlCommand MpcPositionController::computeCommand(
     throw std::runtime_error("MpcPositionController: solver returned status " +
                              std::to_string(status));
   }
+
+  const auto stage1_v   = mpc_->getStage1Velocity();
+  last_desired_velocity_ = {stage1_v[0], stage1_v[1], stage1_v[2]};
 
   framework::ControlCommand cmd;
   cmd.thrust_n     = mpc_data->actuation.getThrust();

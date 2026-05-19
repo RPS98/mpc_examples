@@ -119,7 +119,7 @@ class PidPositionGeometricController(IController):
         self._control_period = 0.01
         self._v_max = 0.0
         self._last_solve_us = 0.0
-        self._last_vel_des = np.zeros(3, dtype=float)
+        self._last_desired_velocity = np.zeros(3, dtype=float)
         self._name = 'PidPositionGeometricController'
 
     @staticmethod
@@ -226,7 +226,7 @@ class PidPositionGeometricController(IController):
         vel_des = self._pos_ctrl.position_to_linear_velocity(
             position, np.asarray(ref.position, dtype=float), self._control_period)
         vel_des = _saturate_velocity(vel_des, self._v_max)
-        self._last_vel_des = np.asarray(vel_des, dtype=float).copy()
+        self._last_desired_velocity = np.asarray(vel_des, dtype=float).copy()
 
         acc_des = self._vel_ctrl.linear_velocity_to_linear_acceleration(
             velocity, vel_des, self._control_period)
@@ -248,8 +248,8 @@ class PidPositionGeometricController(IController):
     def last_solve_time_micros(self) -> float:
         return self._last_solve_us
 
-    def last_velocity_command(self) -> np.ndarray:
-        return self._last_vel_des
+    def last_desired_velocity(self) -> np.ndarray:
+        return self._last_desired_velocity
 
-    def provides_velocity_command(self) -> bool:
+    def provides_desired_velocity(self) -> bool:
         return True

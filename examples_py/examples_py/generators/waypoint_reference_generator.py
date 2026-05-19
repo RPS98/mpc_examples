@@ -31,8 +31,7 @@ from examples_py.framework import (
 
 @dataclass
 class WaypointReferenceConfig:
-    d_max: float = 1.0
-    reach_threshold: float = 0.2
+    reach_threshold: float = 0.1
 
 
 def _quat_to_yaw(q: np.ndarray) -> float:
@@ -40,14 +39,6 @@ def _quat_to_yaw(q: np.ndarray) -> float:
     siny_cosp = 2.0 * (w * z + x * y)
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
     return math.atan2(siny_cosp, cosy_cosp)
-
-
-def _clamp_to_distance(current: np.ndarray, target: np.ndarray, d_max: float) -> np.ndarray:
-    delta = target - current
-    dist = float(np.linalg.norm(delta))
-    if dist < 1e-9 or dist <= d_max:
-        return target.copy()
-    return current + (delta / dist) * d_max
 
 
 def _path_facing_yaw(
@@ -63,11 +54,15 @@ def _path_facing_yaw(
 
 
 class WaypointReferenceGenerator(ITrajectoryGenerator):
-    """Step-wise waypoint reference with no smoothing (p2p)."""
+    """Piecewise-constant waypoint reference (p2p).
+
+    Emits the active waypoint position verbatim each tick; each controller
+    is responsible for ramping the response internally — matches the
+    aerostack2 convention where the motion handler publishes the raw
+    target pose and the plugin clamps its own response.
+    """
 
     def __init__(self, cfg: WaypointReferenceConfig) -> None:
-        if cfg.d_max <= 0.0:
-            raise ValueError('WaypointReferenceGenerator: d_max must be > 0.')
         if cfg.reach_threshold <= 0.0:
             raise ValueError('WaypointReferenceGenerator: reach_threshold must be > 0.')
         self._cfg = cfg
@@ -87,8 +82,6 @@ class WaypointReferenceGenerator(ITrajectoryGenerator):
             raise ValueError('waypoint_reference config: root must be a mapping.')
         cfg = WaypointReferenceConfig()
         if isinstance(root, dict):
-            if 'd_max' in root:
-                cfg.d_max = float(root['d_max'])
             if 'reach_threshold' in root:
                 cfg.reach_threshold = float(root['reach_threshold'])
         return cfg
@@ -124,9 +117,8 @@ class WaypointReferenceGenerator(ITrajectoryGenerator):
 
     def evaluate(self, t: float) -> ReferenceSample:
         del t
-        position = _clamp_to_distance(
-            self._last_position, self._target_wp, self._cfg.d_max)
-        return ReferenceSample(position=position, yaw=self._cached_yaw)
+        return ReferenceSample(position=self._target_wp.copy(),
+                               yaw=self._cached_yaw)
 
     def provided_reference_fields(self) -> ReferenceField:
         return make_mask([ReferenceField.POSITION])

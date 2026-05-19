@@ -36,6 +36,8 @@ from .delay_buffer import DelayBuffer
 from .example_config import DelayMode, ExampleConfig
 from .stdout_progress import print_case_summary, print_status
 from .trajectory_generator_base import ITrajectoryGenerator
+from mav_flight_review import TrajectoryPoint
+
 from .types import ControlCommand, ReferenceField, ReferenceSample, has_field
 # TODO: remove once MCAP pipeline validated.
 # from .unified_csv_logger import LogRow, RunMetadata, UnifiedCsvLogger
@@ -178,27 +180,143 @@ class WaypointsSimulator:
         self._controller.initialize(initial_state, self._example_cfg)
         self._traj_gen.initialize(initial_state, self._example_cfg)
 
+        # Effective waypoint list with optional takeoff / land phases ------
+        # Mirrors aerostack2's 3-phase mission. Prepend a synthetic takeoff
+        # waypoint at (initial.x, initial.y, takeoff_altitude_m) when
+        # takeoff_altitude_m > 0, and append a land waypoint at
+        # (last.x, last.y, 0) when land_at_end=True. Phase 6 uses
+        # mission_first_idx / mission_last_idx to gate experiment_active.
+        init_pos_xyz = np.asarray(initial_state.position, dtype=float)
+        effective_waypoints = [np.asarray(w, dtype=float).copy()
+                               for w in self._example_cfg.waypoints]
+        # `mission_first_idx` and `mission_last_idx` are 0-based inclusive
+        # bounds around the user-supplied waypoints inside `effective_waypoints`.
+        # `experiment_active` is True only inside that closed interval, so the
+        # synthetic takeoff (idx < mission_first_idx) and the synthetic land
+        # (idx > mission_last_idx) stay out of the paper metrics — mirroring
+        # aerostack2's behavior, where takeoff_behavior and land_behavior keep
+        # `experiment_active=False` outside the mission window.
+        n_project_wps = len(effective_waypoints)
+        mission_first_idx = 0
+        if (self._example_cfg.takeoff_altitude_m > 0.0
+                and n_project_wps > 0):
+            takeoff_wp = init_pos_xyz.copy()
+            takeoff_wp[2] = float(self._example_cfg.takeoff_altitude_m)
+            effective_waypoints.insert(0, takeoff_wp)
+            mission_first_idx = 1
+        # Inclusive last index of the user-supplied waypoint segment.
+        mission_last_idx = mission_first_idx + max(n_project_wps - 1, 0)
+        if (self._example_cfg.land_at_end
+                and n_project_wps > 0):
+            land_wp = effective_waypoints[-1].copy()
+            land_wp[2] = 0.0
+            effective_waypoints.append(land_wp)
+
         # Scheduler --------------------------------------------------------
+        # In `continuous` mission_mode, override the scheduler tunables so
+        # the drone flows through every waypoint with no idle hold between
+        # hops (parity with aerostack2's mission_moving_path.py).
+        continuous_mode = (self._example_cfg.mission_mode == 'continuous')
+        scheduler_settle_margin_s = (
+            0.0 if continuous_mode else self._example_cfg.settle_margin_s)
+        scheduler_speed_factor = (
+            1.0 if continuous_mode else self._example_cfg.scheduler_speed_factor)
+
         scheduler = WaypointScheduler()
         scheduler.initialize(
-            self._example_cfg.waypoints,
-            np.asarray(initial_state.position, dtype=float),
+            effective_waypoints,
+            init_pos_xyz,
             self._example_cfg.max_speed,
-            self._example_cfg.settle_margin_s,
-            self._example_cfg.scheduler_speed_factor,
+            scheduler_settle_margin_s,
+            scheduler_speed_factor,
         )
 
         self._traj_gen.on_waypoint_changed(
-            np.asarray(self._example_cfg.waypoints[0], dtype=float),
+            np.asarray(effective_waypoints[0], dtype=float),
             initial_state, 0.0,
         )
+
+        # follow_reference emulation (continuous_mode only) ---------------
+        # Mirror of the C++ logic in waypoints_simulator.cpp: build a
+        # piecewise-linear moving-target schedule through every waypoint
+        # at `max_speed`, then call the local generator's
+        # on_waypoint_changed() every `target_modify_period_s` whenever the
+        # sampled target has shifted more than `target_modify_threshold_m`
+        # from the last published goal. Active for every controller in
+        # continuous_mode, including `mpc_trajectory` (parity with the
+        # aerostack2 3-phase moving_path flow); the QP solver of the
+        # trajectory MPC tolerates the modify cadence as long as it stays
+        # below ~10 Hz, which is what `target_modify_period_s ≈ 0.1` enforces.
+        controller_name = getattr(self._metadata, 'controller_name', '')
+        target_plan_active = (
+            continuous_mode
+            and len(effective_waypoints) >= 2
+        )
+        # The target plan starts at the live initial pose so the moving TF
+        # is anchored where the drone actually is at fly-phase entry
+        # (analogous to the TF lookup in aerostack2's `drone_fly()`). If
+        # the user's wp[0] is already the spawn pose we skip the prepend
+        # to avoid emitting a zero-length first segment.
+        raw_target_wps = np.asarray(effective_waypoints, dtype=float)
+        init_pos = np.asarray(initial_state.position, dtype=float)
+        if np.linalg.norm(raw_target_wps[0] - init_pos) > 1e-3:
+            target_wps = np.vstack([init_pos[None, :], raw_target_wps])
+        else:
+            target_wps = raw_target_wps
+        target_t_at_wp = np.zeros(len(target_wps))
+        if target_plan_active:
+            speeds = max(self._example_cfg.max_speed, 1e-9)
+            for i in range(1, len(target_wps)):
+                target_t_at_wp[i] = target_t_at_wp[i - 1] + \
+                    float(np.linalg.norm(target_wps[i] - target_wps[i - 1])) / speeds
+            if not self._example_cfg.silent:
+                print(
+                    f'  follow_reference emulation: linear target plan '
+                    f'duration = {target_t_at_wp[-1]:.2f} s, modify_period = '
+                    f'{self._example_cfg.target_modify_period_s:.3f} s, '
+                    f'threshold = {self._example_cfg.target_modify_threshold_m:.2f} m, '
+                    f'wps={len(target_wps)} (init pose prepended: '
+                    f'{target_wps is not raw_target_wps})'
+                )
+        target_plan_duration = float(target_t_at_wp[-1]) if target_plan_active else 0.0
+        target_last_published = np.asarray(initial_state.position, dtype=float).copy()
+        target_last_modify_t = -1.0e9
+        # Degenerate-hold state. Mirrors `degenerate_hold_` /
+        # `degenerate_target_` / `init_yaw_angle_` in aerostack2's
+        # generate_polynomial_trajectory_behavior. Active only when
+        # target_plan_active (i.e. inside the follow_reference emulator).
+        from examples_py.framework.degenerate_hold import (
+            fill_static_horizon,
+            is_degenerate_target,
+            quat_to_yaw,
+        )
+        degenerate_hold_active = False
+        degenerate_target = np.asarray(initial_state.position, dtype=float).copy()
+        degenerate_yaw = quat_to_yaw(np.asarray(initial_state.orientation, dtype=float))
+
+        def target_plan_position(t: float) -> np.ndarray:
+            """Sample the piecewise-linear moving target at time t."""
+            if t <= 0.0:
+                return target_wps[0].copy()
+            if t >= target_t_at_wp[-1]:
+                return target_wps[-1].copy()
+            i = 1
+            while i < len(target_t_at_wp) and t > target_t_at_wp[i]:
+                i += 1
+            t0 = target_t_at_wp[i - 1]
+            t1 = target_t_at_wp[i]
+            alpha = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
+            return (1.0 - alpha) * target_wps[i - 1] + alpha * target_wps[i]
 
         # Timing params ----------------------------------------------------
         model_dt = self._example_cfg.model_dt
         controller_dt = self._example_cfg.controller_dt
         outer_dt = self._controller.control_period()
         hover_time = self._example_cfg.hover_time
-        mission_end_t = scheduler.final_time()
+        mission_end_t = (
+            (self._example_cfg.target_start_delay_s + target_plan_duration)
+            if target_plan_active else scheduler.final_time()
+        )
         # sim_config.sim_time is a hard cap on the wall of simulated time:
         # the run ends at min(mission_end + hover, sim_time), even if that
         # truncates the hover phase or the mission itself.
@@ -254,9 +372,36 @@ class WaypointsSimulator:
         current_ref_eval_us = 0.0
         current_ref_delay_us = 0.0
 
+        # Detect whether the active controller consumes a velocity /
+        # acceleration horizon. Trajectory-scope controllers (mpc_trajectory)
+        # do; position-only ones (pid, mpc_position) don't. Mirrors
+        # aerostack2's behaviour: trajectory_generation_behavior only emits
+        # `motion_reference/trajectory` for trajectory-scope runs.
+        required_fields = self._controller.required_reference_fields()
+        emit_trajectory_horizon = (
+            has_field(required_fields, ReferenceField.VELOCITY) or
+            has_field(required_fields, ReferenceField.ACCELERATION))
+
         hover_active = False
         hover_end_time = max_sim_time
         active_index = scheduler.active_index()
+
+        # Per-topic emission state for the mission-side topics so the MCAP
+        # mirrors aerostack2's publish pattern: pose_ref rate-limited at
+        # `mission_pose_ref_freq`, the latched topics emitted only on
+        # value change. `t_last_mission_pose_ref_pub` is -inf so the first
+        # tick inside the mission window emits the topic; the `None`
+        # sentinels on the latched caches guarantee the initial value is
+        # emitted exactly once (so the reviewer's ZOH resampler has data
+        # to hold from).
+        mission_pose_ref_period_s = (
+            1.0 / self._example_cfg.mission_pose_ref_freq
+            if self._example_cfg.mission_pose_ref_freq > 0.0 else 0.0)
+        t_last_mission_pose_ref_pub = -1.0e30
+        last_waypoint_index: Optional[int] = None
+        last_max_speed: Optional[float] = None
+        last_experiment_active: Optional[bool] = None
+        last_hover_active: Optional[bool] = None
 
         wall_start = time.perf_counter()
         t = 0.0
@@ -286,13 +431,69 @@ class WaypointsSimulator:
                     scheduler.waypoint(tick.active_index), state, t)
             active_index = tick.active_index
 
+            # follow_reference emulation tick (continuous_mode only) -------
+            # Mirrors the C++ logic. The degenerate-hold gate runs FIRST:
+            # if the current target is within `degenerate_distance_m` of
+            # the drone, we skip the local generator and publish a static
+            # horizon (target, v=0, a=0, latched yaw). Otherwise the modify
+            # gate (period + threshold) decides whether to replan.
+            skip_generator_for_hold = False
+            if target_plan_active:
+                t_motion = max(0.0, t - self._example_cfg.target_start_delay_s)
+                t_target = min(t_motion, target_plan_duration)
+                target_now = target_plan_position(t_target)
+                target_now_degenerate = is_degenerate_target(
+                    target_now, position,
+                    self._example_cfg.degenerate_distance_m)
+                if target_now_degenerate:
+                    if not degenerate_hold_active and not self._example_cfg.silent:
+                        sys.stderr.write(
+                            f'\n[WaypointsSimulator] Target within '
+                            f'{self._example_cfg.degenerate_distance_m} m of '
+                            f'vehicle at t={t} s: degenerate-hold engaged.\n')
+                    if not degenerate_hold_active:
+                        degenerate_yaw = quat_to_yaw(orientation)
+                    degenerate_hold_active = True
+                    degenerate_target = target_now.copy()
+                    skip_generator_for_hold = True
+                    target_last_published = target_now.copy()
+                    target_last_modify_t = t
+                else:
+                    if degenerate_hold_active:
+                        if not self._example_cfg.silent:
+                            sys.stderr.write(
+                                f'\n[WaypointsSimulator] Degenerate-hold '
+                                f'released at t={t} s: regenerating '
+                                f'trajectory.\n')
+                        # Force a replan on the first tick out of the hold.
+                        self._traj_gen.on_waypoint_changed(target_now, state, t)
+                        target_last_published = target_now.copy()
+                        target_last_modify_t = t
+                        degenerate_hold_active = False
+                    else:
+                        dt_since_modify = t - target_last_modify_t
+                        dist = float(np.linalg.norm(target_now - target_last_published))
+                        if (dt_since_modify >= self._example_cfg.target_modify_period_s
+                                and dist >= self._example_cfg.target_modify_threshold_m):
+                            self._traj_gen.on_waypoint_changed(target_now, state, t)
+                            target_last_published = target_now.copy()
+                            target_last_modify_t = t
+
             # Generator step ------------------------------------------------
             gen_t0 = time.perf_counter()
-            self._traj_gen.update(t, state)
-            gen_t1 = time.perf_counter()
-            for k in range(n_samples):
-                refs[k] = self._traj_gen.evaluate(t + k * dt_h)
-            gen_t2 = time.perf_counter()
+            if skip_generator_for_hold:
+                # Static horizon latched to (degenerate_target, degenerate_yaw,
+                # v=0, a=0). Skip traj_gen.update entirely.
+                fill_static_horizon(degenerate_target, degenerate_yaw,
+                                    refs, n_samples)
+                gen_t1 = time.perf_counter()
+                gen_t2 = gen_t1
+            else:
+                self._traj_gen.update(t, state)
+                gen_t1 = time.perf_counter()
+                for k in range(n_samples):
+                    refs[k] = self._traj_gen.evaluate(t + k * dt_h)
+                gen_t2 = time.perf_counter()
             gen_update_s = gen_t1 - gen_t0
             gen_eval_s = gen_t2 - gen_t1
             generator_update_times.append(gen_update_s)
@@ -317,15 +518,6 @@ class WaypointsSimulator:
             ctrl_delay_s = _resolve_delay(
                 ctrl_delay_mode, ctrl_solve_s, ctrl_delay_fixed)
 
-            # If the controller produces an intermediate velocity setpoint
-            # (e.g. cascaded Position-PID), publish it on the
-            # /drone0/motion_reference/twist topic by overriding the
-            # generator's velocity slot before the buffer push. The sim-time
-            # delay applied to the reference is unchanged.
-            if self._controller.provides_velocity_command():
-                ref_payload.sample.velocity = np.asarray(
-                    self._controller.last_velocity_command(),
-                    dtype=float).copy()
             ref_buffer.push(ref_payload, t + gen_delay_s)
 
             cmd_payload = _TimedCommand(
@@ -336,12 +528,34 @@ class WaypointsSimulator:
             cmd_buffer.push(cmd_payload, t + gen_delay_s + ctrl_delay_s)
 
             # Hover transition ---------------------------------------------
-            if not hover_active and tick.finished and t >= mission_end_t - 1e-9:
+            mission_done = (
+                (t >= mission_end_t - 1e-9)
+                if target_plan_active
+                else (tick.finished and t >= mission_end_t - 1e-9)
+            )
+            if not hover_active and mission_done:
                 hover_active = True
                 hover_end_time = t + hover_time
                 if not silent:
                     print(f'\n  mission finished @ t={t:.2f}s · hovering '
                           f'for {hover_time:.2f}s')
+
+            # Build the trajectory horizon (TrajectorySetpoints payload)
+            # once per outer tick. Emitted on the first inner sub-step
+            # below so the topic cadence matches the outer-loop rate
+            # (100 Hz), comparable to aerostack2's
+            # trajectory_generation_behavior publish cadence.
+            trajectory_horizon_pts = []
+            if emit_trajectory_horizon:
+                for k in range(n_samples):
+                    s = refs[k]
+                    p = TrajectoryPoint()
+                    p.position = np.asarray(s.position, dtype=float)
+                    p.twist = np.asarray(s.velocity, dtype=float)
+                    p.acceleration = np.asarray(s.acceleration, dtype=float)
+                    p.yaw_angle = float(s.yaw)
+                    trajectory_horizon_pts.append(p)
+            first_inner_sub = True
 
             # Inner loop: INDI + physics at controller_dt -------------------
             t_inner = t
@@ -418,10 +632,123 @@ class WaypointsSimulator:
                         generator_eval_time_us=current_ref_eval_us,
                         controller_delay_applied_us=current_cmd_delay_us,
                         generator_delay_applied_us=current_ref_delay_us,
-                        waypoint_index=active_index,
+                        # waypoint_index / experiment_active alignment
+                        # (Phase 6). The mav_flight_review mask resolver
+                        # picks `post_settling` when waypoint_index has
+                        # multiple segments and `experiment_active`
+                        # otherwise. For both backends to land on the
+                        # SAME branch per combo:
+                        #   * triangle (stepwise): publish the live
+                        #     active_index (0..N-1), experiment_active=True
+                        #     between takeoff and pre-land hover. Resolver
+                        #     picks `post_settling`.
+                        #   * moving_path (continuous): publish
+                        #     waypoint_index=0 constant and
+                        #     experiment_active=True during the moving-
+                        #     target motion. Resolver picks
+                        #     `experiment_active`.
+                        waypoint_index=(0 if target_plan_active else active_index),
                         hover_active=hover_active,
+                        # Stepwise gating uses mission_first_idx /
+                        # mission_last_idx (computed once when the takeoff
+                        # / land virtual waypoints are inserted) to keep
+                        # transitions outside the paper metrics — mirrors
+                        # aerostack2's experiment_active window.
+                        # Continuous gating skips the synthetic takeoff
+                        # and land legs of the target_plan by clamping the
+                        # window to [t_at_wp[first], t_at_wp[last]].
+                        experiment_active=(
+                            (not hover_active
+                             and t >= (
+                                 self._example_cfg.target_start_delay_s
+                                 + (float(target_t_at_wp[mission_first_idx])
+                                    if mission_first_idx < len(target_t_at_wp)
+                                    else 0.0))
+                             and t <= (
+                                 self._example_cfg.target_start_delay_s
+                                 + (float(target_t_at_wp[mission_last_idx])
+                                    if mission_last_idx < len(target_t_at_wp)
+                                    else mission_end_t)) + 1e-9)
+                            if target_plan_active
+                            else (not hover_active
+                                  and active_index >= mission_first_idx
+                                  and active_index <= mission_last_idx)
+                        ),
                         max_speed=max_speed,
                     )
+                    if self._controller.provides_desired_velocity():
+                        row.desired_velocity = np.asarray(
+                            self._controller.last_desired_velocity(),
+                            dtype=float).copy()
+                        row.publishes_desired_velocity = True
+
+                    # Match the C++ wrapper: keep mission-side topics
+                    # silent during the synthetic takeoff/land transients
+                    # so the reviewer's clip window aligns with the
+                    # aerostack2 mission window.
+                    row.publish_mission_signals = row.experiment_active
+
+                    # debug/mission/reference/pose payload: as2 publishes
+                    # the active waypoint (triangle) or the live moving-TF
+                    # sample (moving_path). Mirror the split so the
+                    # reviewer's pose_ref carries the same semantics in
+                    # both backends.
+                    if target_plan_active:
+                        t_motion = max(0.0,
+                                       t - self._example_cfg.target_start_delay_s)
+                        t_target_pose = min(t_motion, target_plan_duration)
+                        row.mission_pose_ref_position = target_plan_position(
+                            t_target_pose)
+                    else:
+                        row.mission_pose_ref_position = np.asarray(
+                            row.reference_position, dtype=float).copy()
+
+                    # Mission-topic emission gates. aerostack2 publishes
+                    # `debug/mission/reference/pose` at a fixed rate inside
+                    # the goto / follow_reference loop and the latched
+                    # mission topics only on value change. Mirror here:
+                    #   * pose_ref: rate-limited and gated by the mission
+                    #     window (`publish_mission_signals`).
+                    #   * waypoint_index, max_speed: latched + mission
+                    #     window (silent during synthetic takeoff/land).
+                    #   * experiment_active, hover_active: latched
+                    #     unconditionally so the False↔True transitions
+                    #     are recorded outside the mission window too.
+                    if (row.publish_mission_signals
+                            and mission_pose_ref_period_s > 0.0
+                            and (t_sub - t_last_mission_pose_ref_pub)
+                            >= mission_pose_ref_period_s - 1e-9):
+                        row.publish_mission_pose_ref = True
+                        t_last_mission_pose_ref_pub = t_sub
+                    if row.publish_mission_signals:
+                        if (last_waypoint_index is None
+                                or last_waypoint_index != row.waypoint_index):
+                            row.publish_waypoint_index_change = True
+                            last_waypoint_index = row.waypoint_index
+                        if (last_max_speed is None
+                                or last_max_speed != row.max_speed):
+                            row.publish_max_speed_change = True
+                            last_max_speed = row.max_speed
+                    if (last_experiment_active is None
+                            or last_experiment_active != row.experiment_active):
+                        row.publish_experiment_active_change = True
+                        last_experiment_active = row.experiment_active
+                    if (last_hover_active is None
+                            or last_hover_active != row.hover_active):
+                        row.publish_hover_active_change = True
+                        last_hover_active = row.hover_active
+
+                    # `motion_reference/trajectory` mirrors aerostack2's
+                    # trajectory_generation_behavior output: emit one
+                    # TrajectorySetpoints per outer tick (gated to the
+                    # mission window), only when the controller actually
+                    # consumes a velocity/acceleration horizon.
+                    if (emit_trajectory_horizon and first_inner_sub
+                            and row.publish_mission_signals):
+                        row.trajectory_horizon = trajectory_horizon_pts
+                        row.publish_trajectory_horizon = True
+                    first_inner_sub = False
+
                     logger.log_row(row)
 
             t += outer_dt

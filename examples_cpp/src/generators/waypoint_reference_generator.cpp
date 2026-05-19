@@ -20,17 +20,6 @@ namespace mpc_examples::adapters {
 
 namespace {
 
-Eigen::Vector3d clampToDistance(const Eigen::Vector3d& current,
-                                const Eigen::Vector3d& target,
-                                const double d_max) {
-  const Eigen::Vector3d delta = target - current;
-  const double dist           = delta.norm();
-  if (dist < 1e-9 || dist <= d_max) {
-    return target;
-  }
-  return current + (delta / dist) * d_max;
-}
-
 double pathFacingYaw(const Eigen::Vector3d& from,
                      const Eigen::Vector3d& to,
                      const double fallback_yaw,
@@ -45,9 +34,6 @@ double pathFacingYaw(const Eigen::Vector3d& from,
 }  // namespace
 
 WaypointReferenceGenerator::WaypointReferenceGenerator(const Config& cfg) : cfg_(cfg) {
-  if (cfg_.d_max <= 0.0) {
-    throw std::invalid_argument("WaypointReferenceGenerator: d_max must be > 0.");
-  }
   if (cfg_.reach_threshold <= 0.0) {
     throw std::invalid_argument("WaypointReferenceGenerator: reach_threshold must be > 0.");
   }
@@ -57,9 +43,6 @@ WaypointReferenceGenerator::Config WaypointReferenceGenerator::loadConfigFromYam
     const std::string& path) {
   const YAML::Node root = detail::loadYamlRoot(path);
   Config cfg;
-  if (root["d_max"]) {
-    cfg.d_max = detail::readDoubleRequired(root["d_max"], "d_max");
-  }
   if (root["reach_threshold"]) {
     cfg.reach_threshold = detail::readDoubleRequired(root["reach_threshold"], "reach_threshold");
   }
@@ -95,7 +78,7 @@ void WaypointReferenceGenerator::update(double /*t*/, const mav_model::State& st
 
 framework::ReferenceSample WaypointReferenceGenerator::evaluate(double /*t*/) const {
   framework::ReferenceSample sample;
-  sample.position = clampToDistance(last_position_, target_wp_, cfg_.d_max);
+  sample.position = target_wp_;
   sample.yaw      = cached_yaw_;
   return sample;
 }

@@ -24,6 +24,11 @@ from mavpy.model import State
 from mpc_acados_position import MPC
 from mpc_acados_position.utils.mpc_yaml import configure_mpc_from_yaml
 
+from examples_py.controllers.mpc_speed_utils import (
+    derive_v_ref,
+    read_uh_default,
+    update_speed_constraint,
+)
 from examples_py.framework import (
     ControlCommand,
     ExampleConfig,
@@ -39,7 +44,7 @@ class MpcPositionConfig:
     """Parsed configuration for :class:`MpcPositionController`."""
 
     mpc_yaml_path: str = ''
-    soft_speed_margin: float = 1.0
+    max_vel_percentage: float = 1.0
 
 
 def _yaw_to_quat(yaw: float) -> np.ndarray:
@@ -74,8 +79,9 @@ class MpcPositionController(IController):
     def __init__(self, cfg: MpcPositionConfig) -> None:
         if not cfg.mpc_yaml_path:
             raise ValueError('MpcPositionController: mpc_yaml_path must be provided.')
-        if cfg.soft_speed_margin <= 0.0:
-            raise ValueError('MpcPositionController: soft_speed_margin must be > 0.')
+        if cfg.max_vel_percentage <= 0.0 or cfg.max_vel_percentage > 1.0:
+            raise ValueError(
+                'MpcPositionController: max_vel_percentage must be in (0, 1].')
         self._cfg = cfg
         self._mpc: Optional[MPC] = None
         self._control_period = 0.01
@@ -83,12 +89,13 @@ class MpcPositionController(IController):
         self._dt_horizon = 0.05
         self._horizon_steps = 0
         self._last_solve_us = 0.0
+        self._last_desired_velocity = np.zeros(3, dtype=float)
         self._name = 'MpcPositionController'
 
     @staticmethod
     def load_config_from_yaml(path: str) -> MpcPositionConfig:
         """Load an :class:`MpcPositionConfig` from ``configs/controllers/config_mpc.yaml``-
-        like YAML. ``mpc.soft_speed_margin`` is optional (default 1.0).
+        like YAML. ``mpc.max_vel_percentage`` is optional (default 1.0).
         """
         if not os.path.isfile(path):
             raise ValueError(f'Config file not found at {os.path.abspath(path)}.')
@@ -97,34 +104,29 @@ class MpcPositionController(IController):
         cfg = MpcPositionConfig()
         cfg.mpc_yaml_path = path
         mpc_node = root.get('mpc') if isinstance(root, dict) else None
-        if isinstance(mpc_node, dict) and 'soft_speed_margin' in mpc_node:
-            cfg.soft_speed_margin = float(mpc_node['soft_speed_margin'])
+        if isinstance(mpc_node, dict) and 'max_vel_percentage' in mpc_node:
+            cfg.max_vel_percentage = float(mpc_node['max_vel_percentage'])
         return cfg
 
     def initialize(self, initial_state: State, example_cfg: ExampleConfig) -> None:
         if example_cfg.mpc_dt <= 0.0:
             raise ValueError('MpcPositionController: example_cfg.mpc_dt must be > 0.')
-        if example_cfg.max_speed <= 0.0:
-            raise ValueError('MpcPositionController: example_cfg.max_speed must be > 0.')
 
         ocp_json_file = _read_ocp_json_file(self._cfg.mpc_yaml_path)
         self._mpc = MPC(ocp_json_file)
         configure_mpc_from_yaml(self._mpc, self._cfg.mpc_yaml_path)
-        self._apply_soft_speed_constraint(example_cfg.max_speed)
+
+        # Speed knobs derived from the YAML's `constraints.uh[0]` (= max_speed²),
+        # matching the aerostack2 `as2_position_mpc_plugin` convention. The
+        # ramp and the solver's soft bound share v_ref by construction.
+        uh_default = read_uh_default(self._mpc, 'MpcPositionController')
+        self._v_ref = derive_v_ref(
+            uh_default, self._cfg.max_vel_percentage, 'MpcPositionController')
+        update_speed_constraint(self._mpc, self._v_ref)
 
         self._control_period = example_cfg.mpc_dt
-        self._v_ref = example_cfg.max_speed
         self._horizon_steps = int(self._mpc.get_prediction_steps())
         self._dt_horizon = float(self._mpc.get_prediction_time_step())
-
-    def _apply_soft_speed_constraint(self, max_speed: float) -> None:
-        assert self._mpc is not None
-        nb = self._mpc.get_nonlinear_constraint_bounds()
-        if int(nb.nh_size) <= 0:
-            return
-        soft_speed = self._cfg.soft_speed_margin * max_speed
-        nb.set_uh(np.array([soft_speed * soft_speed], dtype=float))
-        self._mpc.update_nonlinear_constraint_bounds()
 
     def reference_horizon_size(self) -> int:
         return 1
@@ -190,6 +192,10 @@ class MpcPositionController(IController):
             raise RuntimeError(
                 f'MpcPositionController: solver returned status {status}')
 
+        # Stage-1 predicted velocity (state vector indices 7-9 = [vx, vy, vz]).
+        stage1 = self._mpc.acados_ocp_solver.get(1, 'x')
+        self._last_desired_velocity = np.asarray(stage1[7:10], dtype=float).copy()
+
         thrust = float(mpc_data.actuation.thrust)
         rates = np.asarray(mpc_data.actuation.angular_velocity, dtype=float)
         return ControlCommand(thrust_n=thrust, angular_rate=rates)
@@ -202,3 +208,9 @@ class MpcPositionController(IController):
 
     def last_solve_time_micros(self) -> float:
         return self._last_solve_us
+
+    def last_desired_velocity(self) -> np.ndarray:
+        return self._last_desired_velocity
+
+    def provides_desired_velocity(self) -> bool:
+        return True

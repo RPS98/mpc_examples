@@ -8,6 +8,8 @@
 
 #include "controllers/mpc_trajectory_controller.hpp"
 
+#include <yaml-cpp/yaml.h>
+
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -15,6 +17,7 @@
 #include <utility>
 
 #include "acados_mpc/acados_mpc_yaml.hpp"
+#include "controllers/mpc_speed_utils.hpp"
 #include "utils/example_config_utils.hpp"
 
 namespace mpc_examples::adapters {
@@ -32,15 +35,23 @@ MpcTrajectoryController::MpcTrajectoryController(const Config& cfg) : cfg_(cfg) 
   if (cfg_.mpc_yaml_path.empty()) {
     throw std::invalid_argument("MpcTrajectoryController: mpc_yaml_path must be provided.");
   }
+  if (cfg_.max_vel_percentage <= 0.0 || cfg_.max_vel_percentage > 1.0) {
+    throw std::invalid_argument(
+        "MpcTrajectoryController: max_vel_percentage must be in (0, 1].");
+  }
 }
 
 MpcTrajectoryController::Config MpcTrajectoryController::loadConfigFromYaml(
     const std::string& path) {
-  // Validates the YAML file is readable; the full configuration is applied
-  // later by acados_mpc::configureMpcFromYaml() during initialize().
-  (void)detail::loadYamlRoot(path);
+  const YAML::Node root = detail::loadYamlRoot(path);
   Config cfg;
   cfg.mpc_yaml_path = path;
+
+  const YAML::Node mpc_node = root["mpc"];
+  if (mpc_node && mpc_node.IsMap() && mpc_node["max_vel_percentage"]) {
+    cfg.max_vel_percentage =
+        detail::readDoubleRequired(mpc_node["max_vel_percentage"], "mpc.max_vel_percentage");
+  }
   return cfg;
 }
 
@@ -52,6 +63,15 @@ void MpcTrajectoryController::initialize(const mav_model::State& /*initial_state
 
   mpc_ = std::make_unique<acados_mpc::MPC>();
   acados_mpc::configureMpcFromYaml(*mpc_, cfg_.mpc_yaml_path);
+
+  // Cap the solver's runtime `uh` so the per-stage references handed in by
+  // the generator are guaranteed to satisfy ‖v‖² ≤ (sqrt(uh) * pct)². Same
+  // convention as MpcPositionController; matches aerostack2's plugin.
+  const double uh_default =
+      speed_utils::readUhDefault(*mpc_, "MpcTrajectoryController");
+  const double v_ref = speed_utils::deriveVRef(
+      uh_default, cfg_.max_vel_percentage, "MpcTrajectoryController");
+  speed_utils::updateSpeedConstraint(*mpc_, v_ref);
 
   control_period_ = example_cfg.mpc_dt;
   horizon_steps_  = mpc_->getPredictionSteps();
@@ -99,6 +119,9 @@ framework::ControlCommand MpcTrajectoryController::computeCommand(
     throw std::runtime_error("MpcTrajectoryController: solver returned status " +
                              std::to_string(status));
   }
+
+  const auto stage1_v   = mpc_->getStage1Velocity();
+  last_desired_velocity_ = {stage1_v[0], stage1_v[1], stage1_v[2]};
 
   framework::ControlCommand cmd;
   cmd.thrust_n     = mpc_data->actuation.getThrust();

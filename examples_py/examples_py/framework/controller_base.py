@@ -75,20 +75,16 @@ class IController(ABC):
     def last_solve_time_micros(self) -> float:
         """Wall-clock time of the last :meth:`compute_command` call [us]."""
 
-    def last_velocity_command(self) -> np.ndarray:
-        """Saturated velocity setpoint produced by the controller's outer
-        loop, if it computes one (e.g. cascaded position PID). Default:
-        zero vector.
+    def last_desired_velocity(self) -> np.ndarray:
+        """Saturated linear velocity the controller is actively tracking
+        (post-saturation). Position-PID returns its first stage output;
+        MPC returns the stage-1 predicted velocity. Default: zero.
 
-        Used by :class:`WaypointsSimulator` to override the generator's
-        velocity reference in the log when the controller's own intermediate
-        setpoint is what the cascaded inner loop is actually tracking.
+        Mirrors the ``debug/controller/desired_velocity`` topic published
+        by the aerostack2 control plugins.
         """
         return np.zeros(3, dtype=float)
 
-    def provides_velocity_command(self) -> bool:
-        """True iff :meth:`last_velocity_command` returns a meaningful value
-        that should override the generator's velocity reference in the log.
-        Default: False (generator's velocity is logged as-is).
-        """
+    def provides_desired_velocity(self) -> bool:
+        """True iff :meth:`last_desired_velocity` returns a meaningful value."""
         return False

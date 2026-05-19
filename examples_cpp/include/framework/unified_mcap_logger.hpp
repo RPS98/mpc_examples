@@ -20,8 +20,10 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "mav_flight_review/mcap_logger.hpp"
+#include "mav_flight_review/trajectory_point.hpp"
 
 namespace mpc_examples::framework {
 
@@ -63,6 +65,15 @@ struct LogRow {
   /// **position reference** the vehicle is ultimately driven toward.
   Eigen::Vector3d reference_position = Eigen::Vector3d::Zero();
 
+  /// Position payload of `debug/mission/reference/pose` (PoseStamped). The
+  /// caller decides what this carries so that the topic matches the
+  /// aerostack2 semantics per mission mode:
+  ///   * triangle (stepwise): active waypoint target (== reference_position).
+  ///   * moving_path (continuous): the moving-target sample emitted by
+  ///     the follow_reference broadcaster (mission_moving_path.py).
+  /// Orientation is fixed to identity, matching aerostack2's behaviour.
+  Eigen::Vector3d mission_pose_ref_position = Eigen::Vector3d::Zero();
+
   /// Trajectory sample the controller consumes at ``t``: smooth generator
   /// output with the computation delay applied, or a virtual carrot that the
   /// controller advances along the waypoint path. Differs across generators.
@@ -75,6 +86,14 @@ struct LogRow {
   Eigen::Vector3d command_angular_velocity = Eigen::Vector3d::Zero();
   Eigen::Matrix<double, 4, 1> motor_w      = Eigen::Matrix<double, 4, 1>::Zero();
 
+  // Controller debug ----------------------------------------------------------
+  /// Saturated linear velocity the active controller is tracking — output of
+  /// the position-PID first stage for cascaded PIDs, stage-1 predicted state
+  /// for MPC adapters. Earth frame, m/s. Only emitted when
+  /// `publishes_desired_velocity` is true.
+  Eigen::Vector3d desired_velocity = Eigen::Vector3d::Zero();
+  bool publishes_desired_velocity  = false;
+
   // Compute times + delays (microseconds) -------------------------------------
   double controller_compute_time_us  = 0.0;
   double generator_update_time_us    = 0.0;
@@ -85,7 +104,47 @@ struct LogRow {
   // Scheduler state -----------------------------------------------------------
   int waypoint_index = 0;
   bool hover_active  = false;
+  /// When `false`, suppresses the publication of the mission-side topics
+  /// (`pose_reference`, `twist_reference`, `waypoint_index`, `max_speed`)
+  /// for this row. Used during the synthetic takeoff and landing phases
+  /// so the reviewer's segment detector and `clip_to_pose_ref_window`
+  /// limit the analysis exactly to the mission window — the same way
+  /// aerostack2's mission scripts only publish those topics inside the
+  /// `goto` waypoint loop. State, command and motor topics keep being
+  /// logged so the MCAP captures the full flight envelope.
+  bool publish_mission_signals = true;
+  /// True only during the **mission-active** window: the first waypoint acts
+  /// as an implicit takeoff (drone starts at (0, 0, 0)) so we mark it
+  /// `experiment_active = false`; the bool flips to `true` once the
+  /// scheduler advances past it (`waypoint_index >= 1`) and back to `false`
+  /// when the final hover phase begins. Matches the latched topic of the
+  /// same name in aerostack2's `mission.py` / `mission_moving_path.py`.
+  bool experiment_active = false;
   double max_speed   = 0.0;
+
+  // Per-topic emission gates so the mav MCAP mirrors aerostack2's mission
+  // publish pattern: `debug/mission/reference/pose` rate-limited (10 Hz
+  // for triangle, broadcaster_rate_hz for moving_path); the three latched
+  // topics (`waypoint_index`, `max_speed`, `experiment_active`) emitted
+  // only when their value changes; `hover_active` likewise latched.
+  // Defaults are false so the caller (waypoints_simulator) decides which
+  // mission-side save_* invocations run on each row.
+  bool publish_mission_pose_ref           = false;
+  bool publish_waypoint_index_change      = false;
+  bool publish_max_speed_change           = false;
+  bool publish_experiment_active_change   = false;
+  bool publish_hover_active_change        = false;
+
+  /// Horizon of trajectory setpoints (position + linear velocity +
+  /// acceleration + yaw) the controller is consuming. Mirrors
+  /// aerostack2's `motion_reference/trajectory` (`as2_msgs/msg/
+  /// TrajectorySetpoints`). Empty by default; the caller (waypoints_simulator)
+  /// populates it from the current `refs[]` for trajectory-scope runs.
+  std::vector<mav_flight_review::TrajectoryPoint> trajectory_horizon;
+  /// Gate for `motion_reference/trajectory`. The outer loop sets this to
+  /// true on the first inner sub-step of each cycle, so the horizon
+  /// follows the outer-loop cadence (100 Hz) instead of the INDI 500 Hz.
+  bool publish_trajectory_horizon = false;
 };
 
 /**
@@ -96,8 +155,11 @@ struct LogRow {
  *   - ``/drone0/self_localization/pose``        : state pose (PoseStamped).
  *   - ``/drone0/self_localization/twist``       : state twist (TwistStamped).
  *   - ``/drone0/sensor_measurements/odom``      : full odometry (Odometry).
- *   - ``/drone0/motion_reference/trajectory``   : generator trajectory sample
+ *   - ``/drone0/debug/mission/reference/pose``  : generator trajectory sample
  *                                                 with delay applied (PoseStamped).
+ *                                                 Aerostack2-native naming so
+ *                                                 ``mav_flight_review.flight_frame``
+ *                                                 picks it up automatically.
  *   - ``/drone0/motion_reference/twist``        : per-axis velocity setpoint
  *                                                 from the generator with the
  *                                                 same delay (TwistStamped,
@@ -110,6 +172,9 @@ struct LogRow {
  *   - ``/drone0/debug/controller/{compute_output_time,delay_applied}``  (Float64).
  *   - ``/drone0/debug/behaviors/trajectory_generation/{generation_time,eval_time,delay_applied}`` (Float64).
  *   - ``/drone0/debug/mission/waypoint_index`` / ``/drone0/debug/mission/hover_active`` (Int32).
+ *   - ``/drone0/debug/mission/experiment_active`` (Int32, 0/1) — mirror of the
+ *     latched Bool topic published by aerostack2's mission script. Aligned
+ *     with the reviewer's ``_TOPIC_EXPERIMENT_ACTIVE`` constant.
  *   - ``/drone0/debug/mission/max_speed`` (Float64).
  *   - ``/drone0/debug/mission/metadata/{controller_name,generator_name,run_id,language}``
  *     (String, emitted once at t=0).

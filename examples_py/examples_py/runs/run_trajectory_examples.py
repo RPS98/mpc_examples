@@ -37,6 +37,9 @@ _TRAJECTORY_GENERATORS = frozenset(
 
 
 def _is_trajectory_run(spec: RunSpec) -> bool:
+    # Explicit scope wins; otherwise, the legacy generator-based whitelist.
+    if spec.scope:
+        return spec.scope == 'trajectory'
     return spec.generator in _TRAJECTORY_GENERATORS
 
 

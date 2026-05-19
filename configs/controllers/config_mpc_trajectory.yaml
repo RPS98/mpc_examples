@@ -3,40 +3,18 @@ controller:
   ocp_json_file_path: 'libs/acados_trajectory_mpc/mpc_generated_code/acados_ocp.json'
 
 mpc:
+  # Safety knob applied as `v_ref = sqrt(constraints.uh[0]) * max_vel_percentage`.
+  # The current trajectory OCP is generated with `NH = 0` (no `‖v‖²`
+  # constraint), so this field is forward-compat only. ∈ (0, 1].
+  max_vel_percentage: 1.0
   parameters:
-    mass: [1.140] # Mass of the MAV (kg)
-    # Weight for internal states:
-    #   state position [x, y, z],
-    #   state orientation [roll, pitch, yaw],
-    #   state velocity [vx, vy, vz]
-    # Velocity weights (last three) raised 8× over the original
-    # [0.5, 0.5, 0.7] / [0.5, 0.5, 0.8]. The OCP has no hard |v|
-    # constraint (only thrust + body-rate bounds in `constraints`), so
-    # the sole pressure pulling |v_state| toward v_ref is this quadratic
-    # tracking penalty. With the reference plateauing at v_max
-    # (jerk_limited) the original weights left ~40% velocity overshoot;
-    # 4.0 is the empirical sweet spot of the gain-only sweep
-    # (2026-04-29): jerk_limited drops to ~23% over while gcopter and
-    # mav_traj_gen stay at <1% / -23% (their reference shape sets the
-    # ceiling, not the cost). Above 4.0 the marginal v-overshoot
-    # reduction shrinks and position rmse on jerk_limited starts
-    # climbing.
-    #
-    # Q_pos = [3, 3, 4.5] is the empirical sweet spot from the
-    # 2026-04-30 sweep on the demanding mission, averaged across all
-    # 4 generators (jerk_limited, gcopter, dynamic, mav_traj_gen):
-    # ×1.5 hurts gcopter (settle 4.49 → 4.78), ×4 hurts gcopter again
-    # (4.49 → 4.53), ×3 is the only multiplier that wins on every
-    # generator (jerk_limited 6.48 → 6.32, gcopter 4.49 → 4.43,
-    # dynamic 4.21 → 3.90, mav_traj_gen 5.01 → 4.99) with overshoot
-    # essentially unchanged at ≤ 0.002 m.
-    Q: [3.0, 3.0, 4.5, 0.1, 0.1, 5.0, 4.0, 4.0, 4.0]
-    # Weight for end states:
-    Qe: [3.0, 3.0, 4.5, 0.1, 0.1, 5.0, 4.0, 4.0, 4.0]
-    # Weight for control inputs: [thrust, wx, wy, wz]
-    R: [1.0, 2.0, 2.0, 1.3]
+    mass: [1.233]   # kg
+    # State weights: position [x, y, z], orientation [roll, pitch, yaw],
+    # velocity [vx, vy, vz].
+    Q:  [5.0, 5.0, 10.0, 0.1, 0.1, 10.0, 0.1, 0.1, 0.1]
+    Qe: [10.0, 10.0, 20.0, 0.1, 0.1, 20.0, 0.1, 0.1, 0.1]
+    # Control-input weights: [thrust, wx, wy, wz].
+    R: [0.8, 1.0, 1.0, 1.0]
   constraints:
-    # Lower bounds for control inputs: [thrust, wx, wy, wz]
-    lbu: [0.01, -3.0, -3.0, -2.0]
-    # Upper bounds for control inputs: [thrust, wx, wy, wz]
-    ubu: [35.0, 3.0, 3.0, 2.0]
+    lbu: [0.01, -10.0, -10.0, -10.0]   # lower bound on [thrust, wx, wy, wz]
+    ubu: [40.0,  10.0,  10.0,  10.0]   # upper bound on [thrust, wx, wy, wz]

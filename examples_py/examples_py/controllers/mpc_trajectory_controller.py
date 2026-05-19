@@ -24,6 +24,11 @@ from mavpy.model import State
 from mpc_acados_trajectory import MPC
 from mpc_acados_trajectory.utils.mpc_yaml import configure_mpc_from_yaml
 
+from examples_py.controllers.mpc_speed_utils import (
+    derive_v_ref,
+    read_uh_default,
+    update_speed_constraint,
+)
 from examples_py.framework import (
     ControlCommand,
     ExampleConfig,
@@ -39,6 +44,7 @@ class MpcTrajectoryConfig:
     """Parsed configuration for :class:`MpcTrajectoryController`."""
 
     mpc_yaml_path: str = ''
+    max_vel_percentage: float = 1.0
 
 
 def _yaw_to_quat(yaw: float) -> np.ndarray:
@@ -73,26 +79,35 @@ class MpcTrajectoryController(IController):
     def __init__(self, cfg: MpcTrajectoryConfig) -> None:
         if not cfg.mpc_yaml_path:
             raise ValueError('MpcTrajectoryController: mpc_yaml_path must be provided.')
+        if cfg.max_vel_percentage <= 0.0 or cfg.max_vel_percentage > 1.0:
+            raise ValueError(
+                'MpcTrajectoryController: max_vel_percentage must be in (0, 1].')
         self._cfg = cfg
         self._mpc: Optional[MPC] = None
         self._control_period = 0.01
         self._dt_horizon = 0.05
         self._horizon_steps = 0
         self._last_solve_us = 0.0
+        self._last_desired_velocity = np.zeros(3, dtype=float)
         self._name = 'MpcTrajectoryController'
 
     @staticmethod
     def load_config_from_yaml(path: str) -> MpcTrajectoryConfig:
-        """Validate the YAML file is readable and store its path.
-
-        The full configuration is applied later by
+        """Load an :class:`MpcTrajectoryConfig` from
+        ``configs/controllers/config_mpc_trajectory.yaml``-like YAML.
+        ``mpc.max_vel_percentage`` is optional (default 1.0). The full
+        solver configuration is applied later by
         :func:`configure_mpc_from_yaml` during :meth:`initialize`.
         """
         if not os.path.isfile(path):
             raise ValueError(f'Config file not found at {os.path.abspath(path)}.')
         with open(path, 'r') as f:
-            yaml.safe_load(f)
-        return MpcTrajectoryConfig(mpc_yaml_path=path)
+            root = yaml.safe_load(f)
+        cfg = MpcTrajectoryConfig(mpc_yaml_path=path)
+        mpc_node = root.get('mpc') if isinstance(root, dict) else None
+        if isinstance(mpc_node, dict) and 'max_vel_percentage' in mpc_node:
+            cfg.max_vel_percentage = float(mpc_node['max_vel_percentage'])
+        return cfg
 
     def initialize(self, initial_state: State, example_cfg: ExampleConfig) -> None:
         if example_cfg.mpc_dt <= 0.0:
@@ -101,6 +116,15 @@ class MpcTrajectoryController(IController):
         ocp_json_file = _read_ocp_json_file(self._cfg.mpc_yaml_path)
         self._mpc = MPC(ocp_json_file)
         configure_mpc_from_yaml(self._mpc, self._cfg.mpc_yaml_path)
+
+        # Cap the solver's runtime `uh` from the YAML so the references
+        # handed in by the generator are guaranteed to satisfy ‖v‖² ≤
+        # (sqrt(uh) * max_vel_percentage)². Matches MpcPositionController
+        # and aerostack2's `as2_position_mpc_plugin`.
+        uh_default = read_uh_default(self._mpc, 'MpcTrajectoryController')
+        v_ref = derive_v_ref(
+            uh_default, self._cfg.max_vel_percentage, 'MpcTrajectoryController')
+        update_speed_constraint(self._mpc, v_ref)
 
         self._control_period = example_cfg.mpc_dt
         self._horizon_steps = int(self._mpc.get_prediction_steps())
@@ -155,6 +179,10 @@ class MpcTrajectoryController(IController):
             raise RuntimeError(
                 f'MpcTrajectoryController: solver returned status {status}')
 
+        # Stage-1 predicted velocity (state vector indices 7-9 = [vx, vy, vz]).
+        stage1 = self._mpc.acados_ocp_solver.get(1, 'x')
+        self._last_desired_velocity = np.asarray(stage1[7:10], dtype=float).copy()
+
         thrust = float(mpc_data.actuation.thrust)
         rates = np.asarray(mpc_data.actuation.angular_velocity, dtype=float)
         return ControlCommand(thrust_n=thrust, angular_rate=rates)
@@ -171,3 +199,9 @@ class MpcTrajectoryController(IController):
 
     def last_solve_time_micros(self) -> float:
         return self._last_solve_us
+
+    def last_desired_velocity(self) -> np.ndarray:
+        return self._last_desired_velocity
+
+    def provides_desired_velocity(self) -> bool:
+        return True

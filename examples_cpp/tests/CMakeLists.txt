@@ -104,3 +104,8 @@ _add_adapter_test_custom_main(test_factories_trajectory
 _add_adapter_test(test_factories_position
   framework/test_factories_position.cpp
   mpc_examples_factories_position)
+
+# Native-simulator regression: rates=0 must not drift.
+_add_adapter_test(test_native_rates_drift
+  framework/test_native_rates_drift.cpp
+  mpc_examples_framework)

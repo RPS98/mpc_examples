@@ -176,6 +176,15 @@ class PidGeometricController(IController):
         self._control_period = example_cfg.pid_dt
         if self._control_period <= 0.0:
             raise ValueError('PidGeometricController: example_cfg.pid_dt must be > 0.')
+        # Tighten the position-loop velocity cap to the cruise envelope advertised
+        # by the scheduler (`max_speed * scheduler_speed_factor`). aerostack2's
+        # `mission.py` passes the same effective speed via `goto(..., speed=...)`,
+        # so both backends clip the position→velocity output at the same value.
+        effective_max_speed = (
+            float(example_cfg.max_speed) * float(example_cfg.scheduler_speed_factor)
+        )
+        if effective_max_speed > 0.0:
+            self._cfg.v_max = effective_max_speed
 
         pos_params = PositionControllerParameters()
         pos_params.pid_parameters = self._cfg.position_pid_params

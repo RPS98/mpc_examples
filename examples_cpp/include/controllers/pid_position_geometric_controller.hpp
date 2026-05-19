@@ -88,11 +88,10 @@ public:
   const std::string& name() const override { return name_; }
   double lastSolveTimeMicros() const override { return last_solve_us_; }
 
-  /// Saturated velocity setpoint produced by the position PID, fed to the
-  /// inner velocity PID. Logged on /drone0/motion_reference/twist by the
-  /// simulator since the waypoint generator does not produce velocity.
-  Eigen::Vector3d lastVelocityCommand() const override { return last_vel_des_; }
-  bool providesVelocityCommand() const override { return true; }
+  /// Saturated velocity output of the position-PID stage that the velocity
+  /// PID consumes. Published on /drone0/debug/controller/desired_velocity.
+  Eigen::Vector3d lastDesiredVelocity() const override { return last_desired_velocity_; }
+  bool providesDesiredVelocity() const override { return true; }
 
 private:
   Config cfg_;
@@ -103,7 +102,7 @@ private:
   double control_period_ = 0.01;
   double v_max_          = 0.0;  //!< [m/s] sourced from ExampleConfig::max_speed.
   double last_solve_us_  = 0.0;
-  Eigen::Vector3d last_vel_des_ =
+  Eigen::Vector3d last_desired_velocity_ =
       Eigen::Vector3d::Zero();  //!< Saturated position-PID output [m/s].
   std::string name_ = "PidPositionGeometricController";
 };

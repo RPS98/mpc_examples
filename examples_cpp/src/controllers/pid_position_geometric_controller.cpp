@@ -44,22 +44,30 @@ pid_controller::PIDParameters<double> parsePidParameters(const YAML::Node& node,
   params.Ki_gains = read_vec3("ki");
   params.Kd_gains = read_vec3("kd");
 
+  // alpha / antiwindup_cte accept either a single scalar (broadcast to all
+  // axes) or a 3-vector, mirroring as2_geometric_position_controller's
+  // YAML schema.
+  const auto read_vec_or_scalar = [&](const char* key) -> Eigen::Vector3d {
+    const YAML::Node child = node[key];
+    if (child.IsSequence()) {
+      return detail::readVector<3>(child, section + "." + key);
+    }
+    const double v = detail::readDoubleRequired(child, section + "." + key);
+    return Eigen::Vector3d::Constant(v);
+  };
   if (node["antiwindup_cte"]) {
-    const double v =
-        detail::readDoubleRequired(node["antiwindup_cte"], section + ".antiwindup_cte");
-    params.antiwindup_cte = Eigen::Vector3d::Constant(v);
+    params.antiwindup_cte = read_vec_or_scalar("antiwindup_cte");
   }
   if (node["alpha"]) {
-    const double v = detail::readDoubleRequired(node["alpha"], section + ".alpha");
-    params.alpha   = Eigen::Vector3d::Constant(v);
+    params.alpha = read_vec_or_scalar("alpha");
   }
   if (node["saturation_upper"] && node["saturation_lower"]) {
     params.upper_output_saturation =
         detail::readVector<3>(node["saturation_upper"], section + ".saturation_upper");
     params.lower_output_saturation =
         detail::readVector<3>(node["saturation_lower"], section + ".saturation_lower");
-    params.proportional_saturation_flag = true;
   }
+  params.proportional_saturation_flag = true;
   return params;
 }
 
@@ -150,8 +158,8 @@ framework::ControlCommand PidPositionGeometricController::computeCommand(
 
   Eigen::Vector3d vel_des =
       pos_ctrl_->positionToLinearVelocity(position, ref.position, control_period_);
-  vel_des       = saturateVelocity(vel_des, v_max_);
-  last_vel_des_ = vel_des;
+  vel_des                 = saturateVelocity(vel_des, v_max_);
+  last_desired_velocity_  = vel_des;
 
   const Eigen::Vector3d acc_des =
       vel_ctrl_->linearVelocityToLinearAcceleration(velocity, vel_des, control_period_);

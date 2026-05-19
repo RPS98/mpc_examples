@@ -1,42 +1,43 @@
 model:
-  mass: 1.140 # kg
-  gravity: 9.81 # m/s^2
-  inertia: [0.0049, 0.0049, 0.0069] # kg*m^2
+  mass: 1.233                            # kg
+  gravity: 9.81                          # m/s^2
+  inertia: [1.6e-3, 4.6e-3, 6.127e-3]    # kg*m^2 [Ixx, Iyy, Izz]
   motors:
-    dx: [-0.129382, 0.129382, -0.129382, 0.129382] # m
-    dy: [-0.133978, -0.133978, 0.133978, 0.133978] # m
+    dx: [-0.129382, 0.129382, -0.129382, 0.129382]   # m
+    dy: [-0.133978, -0.133978, 0.133978, 0.133978]   # m
     cf: [9.5548e-6, 9.5548e-6, 9.5548e-6, 9.5548e-6] # N/(rad/s)^2
     ct: [1.3552e-7, 1.3552e-7, 1.3552e-7, 1.3552e-7] # N*m/(rad/s)^2
-    tau: [0.01, 0.01, 0.01, 0.01] # s
+    tau: [0.01, 0.01, 0.01, 0.01]                    # s
     direction: [-1.0, 1.0, 1.0, -1.0]
-    min_angular_velocity: [0.0, 0.0, 0.0, 0.0] # rad/s
-    max_angular_velocity: [1140.0, 1140.0, 1140.0, 1140.0] # rad/s
-  drag_coefficient_linear: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  drag_coefficient_angular: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  stocastic_force: [0.0, 0.0, 0.0]
-  stocastic_torque: [0.0, 0.0, 0.0]
-  external_force: [0.0, 0.0, 0.0]
-  external_torque: [0.0, 0.0, 0.0]
+    min_angular_velocity: [0.0, 0.0, 0.0, 0.0]       # rad/s
+    max_angular_velocity: [1140.0, 1140.0, 1140.0, 1140.0]
+  drag_coefficient_linear:  [0.05, 0.05, 0.05, 0.0, 0.0, 0.0]
+  drag_coefficient_angular: [0.003, 0.003, 0.003, 0.0, 0.0, 0.0]
+  stocastic_force:    [0.0, 0.0, 0.0]   # N²·s — variance density of additive white-noise force per axis
+  stocastic_torque:   [0.0, 0.0, 0.0]   # (N·m)²·s — variance density of additive white-noise torque per axis
+  process_noise_seed: 0                 # RNG seed for force/torque process noise
+  external_force:   [0.0, 0.0, 0.0]
+  external_torque:  [0.0, 0.0, 0.0]
 
 imu:
-  gyroscope_noise_density: 0.0
+  gyroscope_noise_density: 0.0           # rad/s/sqrt(Hz)
   gyroscope_random_walk: 0.0
-  accelerometer_noise_density: 0.0
+  accelerometer_noise_density: 0.0       # m/s^2/sqrt(Hz)
   accelerometer_random_walk: 0.0
-  imu_orientation: [1.0, 0.0, 0.0, 0.0] # qw, qx, qy, qz
-  gravity: [0.0, 0.0, -9.81] # m/s^2
+  imu_orientation: [1.0, 0.0, 0.0, 0.0]  # [qw, qx, qy, qz]
+  gravity: [0.0, 0.0, -9.81]             # m/s^2
   seed: 0
 
 controller:
   indi:
-    Kp: [9.0, 9.0, 6.0]
-    Ki: [3.0, 3.0, 1.5]
-    Kd: [0.3, 0.3, 0.2]
-    alpha: [0.6, 0.6, 0.5]
+    Kp: [9.0, 9.0, 9.0]
+    Ki: [3.0, 3.0, 3.0]
+    Kd: [0.3, 0.3, 0.3]
+    alpha: [0.6, 0.6, 0.6]
     antiwindup_cte: [1.0, 1.0, 1.0]
-    angular_acceleration_limit: [0.0, 0.0, 0.0] # rad/s^2
+    angular_acceleration_limit: [0.0, 0.0, 0.0]  # rad/s^2
   rates:
     kp_rotation: [20.0, 20.0, 8.0]
   attitude:
-    vehicle_mass: 1.140 # kg
-    gravity: 9.81 # m/s^2
+    vehicle_mass: 1.233                          # kg
+    gravity: 9.81                                # m/s^2

@@ -148,10 +148,16 @@ class JerkLimitedGenerator(ITrajectoryGenerator):
             self._duration = 0.0
             return
 
-        # Two-waypoint hop. Same arrange-from-rest constraint as the rest
-        # of p2p adapters (gcopter, dynamic): the scheduler settle margin
-        # absorbs the v0 discontinuity at segment boundaries.
-        wps = [Waypoint(p0), EndWaypoint(next_wp)]
+        # Two-waypoint hop. Pin the C1 initial conditions of the segment
+        # to the live drone state (v0 = state.linear_velocity, a0 = 0) so
+        # the jerk-limited integrator stitches continuously across replans
+        # — matching the gcopter adapter's `wp[0].velocity = ...` pattern
+        # and the aerostack2 plugin behaviour. Without this, every replan
+        # reactive to a follow_reference modify injects a step in the
+        # commanded velocity.
+        start = Waypoint(p0)
+        start.velocity = np.asarray(state.linear_velocity, dtype=float).copy()
+        wps = [start, EndWaypoint(next_wp)]
         self._has_plan = bool(self._ctrl.generate(wps, self._max_speed))
         if not self._has_plan:
             self._duration = 0.0

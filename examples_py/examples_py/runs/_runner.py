@@ -94,9 +94,20 @@ def _run_case(spec, example_cfg, simulator_params,
     if print_banner:
         print_case_banner(index, total, spec.controller, spec.generator, run_id)
     try:
-        # Determine scope: trajectory if generator is one of the trajectory types
-        trajectory_generators = {'gcopter', 'jerk_limited', 'dynamic', 'mav_traj_gen'}
-        is_trajectory_scope = spec.generator in trajectory_generators
+        # Determine scope. The explicit ``scope`` field on the run entry
+        # wins so the same (controller, generator) pair can map to two
+        # different controller classes depending on which binary picks
+        # the entry (e.g. ``pid + gcopter`` runs the cascade
+        # ``PidPositionGeometricController`` in the position scope and
+        # the parallel ``PidTrajectoryGeometricController`` in the
+        # trajectory scope — see config_example_continuous.yaml).
+        # Falls back to the legacy generator-based heuristic when the
+        # scope is left unset on the run entry.
+        if spec.scope:
+            is_trajectory_scope = (spec.scope == 'trajectory')
+        else:
+            trajectory_generators = {'gcopter', 'jerk_limited', 'dynamic', 'mav_traj_gen'}
+            is_trajectory_scope = spec.generator in trajectory_generators
         controller = make_controller(spec.controller, spec.controller_config, is_trajectory_scope)
         generator = make_generator(spec.generator, spec.generator_config)
 

@@ -121,6 +121,8 @@ int MPC::solve() {
   // Get solution
   ocp_nlp_out_get(acados_pointers_.nlp_config, acados_pointers_.nlp_dims, acados_pointers_.nlp_out,
                   0, "u", mpc_data_.actuation.data.data());
+  ocp_nlp_out_get(acados_pointers_.nlp_config, acados_pointers_.nlp_dims, acados_pointers_.nlp_out,
+                  1, "x", mpc_data_.predicted_state_stage1.data.data());
 
   if (status_ != 0) {
     std::cerr << "MPC solver returned status " << status_ << std::endl;

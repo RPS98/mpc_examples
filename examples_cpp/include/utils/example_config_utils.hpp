@@ -79,6 +79,16 @@ struct RunSpec {
   bool enabled = true;
   std::string controller_config;  ///< Optional override for the controller YAML path.
   std::string generator_config;   ///< Optional override for the generator YAML path.
+  /// Optional scope hint. ``"position"`` restricts the entry to
+  /// ``run_position_examples``; ``"trajectory"`` restricts it to
+  /// ``run_trajectory_examples``. Empty (default) means both binaries
+  /// honour the legacy generator-based scope check. Use the explicit
+  /// scope only when the same (controller, generator) pair is meant to
+  /// run with **different** controller_config files in each binary
+  /// (e.g. ``pid + gcopter`` runs cascade in the position scope and
+  /// parallel in the trajectory scope — see the paper's moving_path
+  /// configuration).
+  std::string scope;
 };
 
 struct ExampleConfig {
@@ -99,7 +109,57 @@ struct ExampleConfig {
   /// waypoint switch. Must lie in (0, 1]. Default 1.0 keeps the legacy
   /// distance/max_speed heuristic.
   double scheduler_speed_factor = 1.0;
+  /// Mission scheduling mode. "stepwise" (default) keeps the legacy
+  /// behaviour: the WaypointScheduler waits ``settle_margin_s`` between
+  /// hops, so the drone reaches a near-zero velocity at every waypoint.
+  /// "continuous" overrides ``settle_margin_s`` to 0 and
+  /// ``scheduler_speed_factor`` to 1, producing a chained flow through
+  /// all waypoints with no idle hold — this mirrors aerostack2's
+  /// ``mission_moving_path.py`` (single follow_reference goal vs.
+  /// per-waypoint go_to). The flag also propagates to the
+  /// ``experiment_active`` toggle so the active window covers the whole
+  /// chain rather than starting at ``waypoint_index >= 1``.
+  std::string mission_mode      = "stepwise";
+  /// follow_reference emulation parameters (only used when
+  /// ``mission_mode == "continuous"``). Mirror aerostack2's
+  /// ``mission_moving_path.py`` + ``follow_reference_plugin_trajectory``
+  /// chain: a target plan is pre-fitted with gcopter on all waypoints,
+  /// then the local generator is replanned (``onWaypointChanged``) every
+  /// ``target_modify_period_s`` seconds whenever the moving target has
+  /// shifted more than ``target_modify_threshold_m`` from the last
+  /// published goal.
+  double target_modify_period_s    = 0.2;    ///< Replan at most 5 Hz (rate-limit gate).
+  double target_modify_threshold_m = 1.0;    ///< Replan only when target shifted >1.0 m
+                                             ///< from last published goal. Higher than the
+                                             ///< aerostack2 plugin default (0.01 m) to avoid
+                                             ///< LBFGS degeneracies — gcopter solver fails on
+                                             ///< near-zero-distance start→end pairs. Tuned to
+                                             ///< let mpc_trajectory × gcopter converge while
+                                             ///< still producing a moving target reference.
+  double target_start_delay_s      = 0.0;    ///< Seconds the target stays parked at waypoint[0].
+  /// Park / degenerate-hold threshold (m). When the moving target sits
+  /// closer than this to the vehicle, the local generator is bypassed and
+  /// the controller receives a static reference horizon latched to the
+  /// target. Mirrors aerostack2's `kDegenerateDistanceM` constant in
+  /// `generate_polynomial_trajectory_base.hpp`. <= 0 disables the gate.
+  double degenerate_distance_m  = 0.05;
+  /// Synthetic takeoff height (m) prepended as the first waypoint of the
+  /// mission. Mirrors aerostack2's `takeoff_behavior` so both backends
+  /// record the climb-to-cruise phase in the mcap. Set to 0 to keep the
+  /// legacy behaviour (drone starts at the first user waypoint).
+  double takeoff_altitude_m     = 0.0;
+  /// Append a synthetic landing waypoint at the end of the mission. The
+  /// land target is (last_wp.x, last_wp.y, 0). Mirrors aerostack2's
+  /// `land_behavior`.
+  bool land_at_end              = false;
   bool path_facing              = true;
+  /// Publication frequency of the mission pose reference topic
+  /// (`/drone0/debug/mission/reference/pose`). Matches the rate
+  /// aerostack2's mission scripts use: 10 Hz for the stepwise triangle
+  /// mission (constant `REPUBLISH_RATE_HZ` in `mission.py`) and the
+  /// mission.yaml `execution.broadcaster_rate_hz` for the continuous
+  /// moving_path mission. Set to <= 0 to suppress the topic entirely.
+  double mission_pose_ref_freq  = 10.0;
   std::string output_format     = "mcap";  ///< Output format: "mcap" or "csv".
   bool benchmark                = false;   ///< Skip CSV logging for performance measurement.
   bool silent   = false;  ///< Suppress in-loop console output (progress bar, waypoint messages).
@@ -150,6 +210,73 @@ Eigen::Matrix<double, N, 1> readVector(const YAML::Node& node, const std::string
     }
   }
   return value;
+}
+
+/// Resolve a single waypoint coordinate that may be expressed as a literal
+/// number or one of the symbolic tokens "D", "H", "-D", "-H".
+///
+/// `D` (horizontal distance) and `H` (vertical step) are configured
+/// through `sim_config.evaluate.{distance,height}`. When neither token
+/// applies and the YAML scalar is numeric, the value is returned as-is.
+inline double resolveWaypointToken(const YAML::Node& node,
+                                   const std::string& name,
+                                   const double distance,
+                                   const double height) {
+  if (!node || !node.IsScalar()) {
+    throw std::invalid_argument(name + " must be a scalar (number or token).");
+  }
+  // Try numeric first.
+  try {
+    return node.as<double>();
+  } catch (const YAML::Exception&) {
+    // fall through to token parsing
+  }
+  std::string s = node.as<std::string>();
+  // Trim leading/trailing spaces.
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(0, 1);
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+  double sign = 1.0;
+  if (!s.empty() && s.front() == '-') {
+    sign = -1.0;
+    s.erase(0, 1);
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(0, 1);
+  }
+  if (s == "D") return sign * distance;
+  if (s == "H") return sign * height;
+  throw std::invalid_argument(name + " has unsupported token '" + node.as<std::string>() +
+                              "'; allowed values are D, H, -D, -H, or a numeric literal.");
+}
+
+/// Read a 3-element waypoint that may use D/H tokens. The takeoff offset
+/// is added to the third (z) component so token "0" translates to
+/// `takeoff_height` and "H" to `takeoff_height + height`. If both
+/// `distance` and `height` are <= 0, the function reads the waypoint
+/// as a plain numeric vector and ignores the takeoff offset (legacy
+/// behaviour).
+inline Eigen::Vector3d readWaypoint(const YAML::Node& node,
+                                    const std::string& name,
+                                    const double distance,
+                                    const double height,
+                                    const double takeoff_height) {
+  if (!node || !node.IsSequence() || node.size() != 3) {
+    throw std::invalid_argument(name + " must be a sequence with 3 elements.");
+  }
+  if (distance <= 0.0 && height <= 0.0) {
+    // Legacy: numeric vector, no takeoff offset.
+    Eigen::Vector3d v;
+    for (int i = 0; i < 3; ++i) {
+      try {
+        v(i) = node[i].as<double>();
+      } catch (const YAML::Exception&) {
+        throw std::invalid_argument(name + " must contain numeric values.");
+      }
+    }
+    return v;
+  }
+  const double x = resolveWaypointToken(node[0], name + "[x]", distance, height);
+  const double y = resolveWaypointToken(node[1], name + "[y]", distance, height);
+  const double z = resolveWaypointToken(node[2], name + "[z]", distance, height);
+  return Eigen::Vector3d(x, y, takeoff_height + z);
 }
 
 inline YAML::Node loadYamlRoot(const std::string& path) {
@@ -306,6 +433,11 @@ inline void loadRunsFromNode(const YAML::Node& runs_node, std::vector<RunSpec>& 
         readStringOptional(item["controller_config"], prefix + ".controller_config", std::string());
     spec.generator_config =
         readStringOptional(item["generator_config"], prefix + ".generator_config", std::string());
+    spec.scope = readStringOptional(item["scope"], prefix + ".scope", std::string());
+    if (!spec.scope.empty() && spec.scope != "position" && spec.scope != "trajectory") {
+      throw std::invalid_argument(prefix + ".scope must be 'position', 'trajectory' or empty (got '" +
+                                  spec.scope + "').");
+    }
     out.push_back(std::move(spec));
   }
 }
@@ -336,7 +468,48 @@ inline ExampleConfig loadExampleConfig(const std::string& path) {
     throw std::runtime_error("sim_config.scheduler_speed_factor must lie in (0, 1] (got " +
                              std::to_string(config.scheduler_speed_factor) + ")");
   }
+  config.mission_mode = detail::readStringOptional(
+      sim["mission_mode"], "sim_config.mission_mode", "stepwise");
+  if (config.mission_mode != "stepwise" && config.mission_mode != "continuous") {
+    throw std::invalid_argument(
+        "sim_config.mission_mode must be either 'stepwise' or 'continuous' (got '" +
+        config.mission_mode + "').");
+  }
+  config.target_modify_period_s = detail::readDoubleOptional(
+      sim["target_modify_period_s"], "sim_config.target_modify_period_s", 0.05);
+  if (config.target_modify_period_s < 0.0) {
+    throw std::runtime_error(
+        "sim_config.target_modify_period_s must be >= 0 (got " +
+        std::to_string(config.target_modify_period_s) + ")");
+  }
+  config.target_modify_threshold_m = detail::readDoubleOptional(
+      sim["target_modify_threshold_m"], "sim_config.target_modify_threshold_m", 0.01);
+  if (config.target_modify_threshold_m < 0.0) {
+    throw std::runtime_error(
+        "sim_config.target_modify_threshold_m must be >= 0 (got " +
+        std::to_string(config.target_modify_threshold_m) + ")");
+  }
+  config.target_start_delay_s = detail::readDoubleOptional(
+      sim["target_start_delay_s"], "sim_config.target_start_delay_s", 0.0);
+  if (config.target_start_delay_s < 0.0) {
+    throw std::runtime_error(
+        "sim_config.target_start_delay_s must be >= 0 (got " +
+        std::to_string(config.target_start_delay_s) + ")");
+  }
+  config.degenerate_distance_m = detail::readDoubleOptional(
+      sim["degenerate_distance_m"], "sim_config.degenerate_distance_m", 0.05);
+  config.takeoff_altitude_m = detail::readDoubleOptional(
+      sim["takeoff_altitude_m"], "sim_config.takeoff_altitude_m", 0.0);
+  if (config.takeoff_altitude_m < 0.0) {
+    throw std::runtime_error(
+        "sim_config.takeoff_altitude_m must be >= 0 (got " +
+        std::to_string(config.takeoff_altitude_m) + ")");
+  }
+  config.land_at_end = detail::readBoolOptional(
+      sim["land_at_end"], "sim_config.land_at_end", false);
   config.path_facing = detail::readBoolRequired(sim["path_facing"], "sim_config.path_facing");
+  config.mission_pose_ref_freq = detail::readDoubleOptional(
+      sim["mission_pose_ref_freq"], "sim_config.mission_pose_ref_freq", 10.0);
   config.output_format =
       detail::readStringOptional(sim["output_format"], "sim_config.output_format", "mcap");
   config.benchmark = detail::readBoolOptional(sim["benchmark"], "sim_config.benchmark", false);
@@ -359,6 +532,28 @@ inline ExampleConfig loadExampleConfig(const std::string& path) {
       sim["generator_delay_fixed_s"], "sim_config.generator_delay_fixed_s", 0.0);
 
   // Waypoints -----------------------------------------------------------------
+  // Optional `sim_config.evaluate.{distance,height}` enables symbolic
+  // tokens "D"/"H"/"-D"/"-H" inside the waypoint list (and adds
+  // `takeoff_height` to the z component). When the section is absent
+  // the legacy behaviour (waypoints are absolute metres in world frame)
+  // is preserved.
+  double evaluate_distance = 0.0;
+  double evaluate_height = 0.0;
+  double takeoff_height = 0.0;
+  const YAML::Node evaluate_node = sim["evaluate"];
+  if (evaluate_node && evaluate_node.IsMap()) {
+    evaluate_distance = detail::readDoubleRequired(
+        evaluate_node["distance"], "sim_config.evaluate.distance");
+    evaluate_height = detail::readDoubleOptional(
+        evaluate_node["height"], "sim_config.evaluate.height", evaluate_distance);
+    takeoff_height = detail::readDoubleOptional(
+        sim["takeoff_height"], "sim_config.takeoff_height", 0.0);
+    if (evaluate_distance <= 0.0 || evaluate_height <= 0.0) {
+      throw std::invalid_argument(
+          "sim_config.evaluate.distance and evaluate.height must be > 0.");
+    }
+  }
+
   const YAML::Node waypoints = sim["waypoints"];
   if (!waypoints || !waypoints.IsSequence()) {
     throw std::invalid_argument("sim_config.waypoints must be a list.");
@@ -366,8 +561,9 @@ inline ExampleConfig loadExampleConfig(const std::string& path) {
 
   config.waypoints.clear();
   for (std::size_t index = 0; index < waypoints.size(); ++index) {
-    config.waypoints.push_back(detail::readVector<3>(
-        waypoints[index], "sim_config.waypoints[" + std::to_string(index) + "]"));
+    config.waypoints.push_back(detail::readWaypoint(
+        waypoints[index], "sim_config.waypoints[" + std::to_string(index) + "]",
+        evaluate_distance, evaluate_height, takeoff_height));
   }
 
   if (config.waypoints.empty()) {

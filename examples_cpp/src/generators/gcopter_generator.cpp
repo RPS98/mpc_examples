@@ -141,13 +141,14 @@ void GcopterGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
     return;
   }
 
-  // Two-waypoint hop. MINCO + L-BFGS converges fine for any non-degenerate
-  // segment; the pure-vertical degeneracy is handled inside gcopter_lib via
-  // OptimizationConfig::vertical_perturbation, so the adapter just hands
-  // (start, end) to the solver and trusts it to converge.
+  // Two-waypoint hop. Pin the initial velocity to the drone's current
+  // kinematics so consecutive segments stitch with C1 continuity; gcopter
+  // handles the pure-vertical degeneracy internally.
   std::vector<gcopter_lib::Waypoint> wps(2);
-  wps[0].position = p0;
-  wps[1].position = next_waypoint;
+  wps[0].position     = p0;
+  wps[0].velocity     = state.getLinearVelocityVector();
+  wps[0].acceleration = std::nullopt;
+  wps[1].position     = next_waypoint;
   has_plan_       = ctrl_->generate(wps, cfg_.drone_limits.max_velocity);
   if (!has_plan_) {
     // Fall back to a static setpoint at next_waypoint. The comparison remains

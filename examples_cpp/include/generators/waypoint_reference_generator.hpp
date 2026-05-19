@@ -25,18 +25,21 @@
 namespace mpc_examples::adapters {
 
 /**
- * @brief Piecewise-constant waypoint reference with clamping and path-facing yaw.
+ * @brief Piecewise-constant waypoint reference with path-facing yaw.
  *
- * Emits the active waypoint position (clamped to cfg_.d_max from the last
- * observed drone position) with velocity and acceleration held at zero.
+ * Emits the active waypoint position verbatim (velocity and acceleration
+ * held at zero); each controller is responsible for ramping the response
+ * internally — matches the aerostack2 convention where the motion handler
+ * publishes the raw target pose and the plugin clamps its own response
+ * (e.g. `PidPositionGeometricController::saturateVelocity`,
+ * `MpcPositionController::setProgressiveReferences`).
  *
  * Capabilities: provides ReferenceField::kPosition only.
  */
 class WaypointReferenceGenerator : public framework::ITrajectoryGenerator {
 public:
   struct Config {
-    double d_max           = 2.0;  //!< Max reference distance from current position [m].
-    double reach_threshold = 0.1;  //!< Minimum planar distance for yaw alignment [m].
+    double reach_threshold = 0.1;  //!< Minimum planar distance for path-facing yaw alignment [m].
   };
 
   explicit WaypointReferenceGenerator(const Config& cfg);

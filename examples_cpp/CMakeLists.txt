@@ -39,6 +39,7 @@ target_link_libraries(mpc_examples_framework PUBLIC
   mav_simulator        # INTERFACE: provides mav_model / simulator headers + Eigen
   yaml-cpp             # consumed via utils/example_config_utils.hpp
   mav_flight_review    # MCAP / CSV logger backing unified_mcap_logger.hpp
+  gcopter_lib          # follow_reference emulation needs gcopter::TrajectoryGenerator
 )
 
 target_compile_features(mpc_examples_framework PUBLIC cxx_std_17)

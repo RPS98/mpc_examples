@@ -25,9 +25,24 @@ constexpr const char* kTopicGeneratorDelay      = "/drone0/debug/behaviors/traje
 constexpr const char* kTopicMaxSpeed            = "/drone0/debug/mission/max_speed";
 constexpr const char* kTopicWaypointIndex       = "/drone0/debug/mission/waypoint_index";
 constexpr const char* kTopicHoverActive         = "/drone0/debug/mission/hover_active";
+// Mirror of the latched std_msgs/Bool topic published by aerostack2's
+// mission scripts. Published here as Int32 (0/1) because the MCAP writer
+// doesn't expose a Bool API; mav_flight_review's flight_frame ingests
+// either schema (it reads only the `data` field) and the metrics-side
+// masking does `> 0.5` so the int representation works transparently.
+constexpr const char* kTopicExperimentActive    = "/drone0/debug/mission/experiment_active";
 constexpr const char* kTopicMotorSpeeds         = "/drone0/actuator_command/motor_speeds";
-constexpr const char* kTopicMotionRefTrajectory = "/drone0/motion_reference/trajectory";
+// Aerostack2-native pose reference topic. Aligned with the reviewer's
+// hardcoded constant in mav_flight_review/flight_frame.py
+// (``_TOPIC_POSE_REF``) so ``load_flight_frame`` picks up the smooth
+// reference automatically and ``clip_to_pose_ref_window`` has data to
+// work with. The stepwise active waypoint is published separately
+// under ``motion_reference/position`` (Vector3) below.
+constexpr const char* kTopicMissionRefPose      = "/drone0/debug/mission/reference/pose";
 constexpr const char* kTopicMotionRefPosition   = "/drone0/motion_reference/position";
+// Velocity the active controller is tracking (post-saturation). Mirrors
+// the aerostack2 plugins' `debug/controller/desired_velocity` topic.
+constexpr const char* kTopicDesiredVelocity     = "/drone0/debug/controller/desired_velocity";
 
 // Metadata topics (emitted once at t=0).
 constexpr const char* kTopicMetaController = "/drone0/debug/mission/metadata/controller_name";
@@ -46,11 +61,12 @@ UnifiedMcapLogger::UnifiedMcapLogger(const std::string& output_path, const RunMe
   // SIMULATION keeps the timestamps the caller passes (model seconds) instead
   // of treating them as absolute POSIX time. Matches the CSV column ``time``.
   cfg.time_mode = mav_flight_review::TimeMode::SIMULATION;
-  // Rename the built-in pose reference channel so the MCAP carries it under
-  // the ``motion_reference/trajectory`` semantics (generator output, with
-  // delay applied), leaving ``motion_reference/position`` free for the
-  // stepwise waypoint target below.
-  cfg.pose_reference_topic = kTopicMotionRefTrajectory;
+  // Route the built-in pose reference channel to the aerostack2-native
+  // mission-reference topic so the reviewer (mav_flight_review's
+  // ``flight_frame.py::_TOPIC_POSE_REF``) picks up the controller-visible
+  // smooth reference. The stepwise waypoint target is published
+  // separately under ``motion_reference/position`` (Vector3) below.
+  cfg.pose_reference_topic = kTopicMissionRefPose;
 
   impl_ = std::make_unique<mav_flight_review::MCAPLogger>(cfg);
 
@@ -63,8 +79,10 @@ UnifiedMcapLogger::UnifiedMcapLogger(const std::string& output_path, const RunMe
   impl_->add_float64_topic(kTopicMaxSpeed);
   impl_->add_int32_topic(kTopicWaypointIndex);
   impl_->add_int32_topic(kTopicHoverActive);
+  impl_->add_int32_topic(kTopicExperimentActive);
   impl_->add_float64_multi_array_topic(kTopicMotorSpeeds);
   impl_->add_vector3_topic(kTopicMotionRefPosition);
+  impl_->add_twist_stamped_topic(kTopicDesiredVelocity);
   impl_->add_string_topic(kTopicMetaController);
   impl_->add_string_topic(kTopicMetaGenerator);
   impl_->add_string_topic(kTopicMetaRunId);
@@ -95,13 +113,23 @@ void UnifiedMcapLogger::logRow(const LogRow& row) {
   const Eigen::Vector4d quat = toQuatWxyz(row.orientation);
   impl_->save_state(t, row.position, quat, row.linear_velocity, row.angular_velocity);
 
-  // Trajectory sample the controller consumes (smooth, with delay applied).
-  impl_->save_pose_reference(t, row.trajectory_position, toQuatWxyz(row.trajectory_orientation));
-  // Per-axis linear velocity reference from the generator (same delay applied).
-  impl_->save_twist_reference(t, row.trajectory_velocity);
-
-  // Position reference (waypoint target, stepwise — identical across cases).
-  impl_->save_vector3(kTopicMotionRefPosition, t, row.reference_position);
+  if (row.publish_mission_pose_ref) {
+    // Mirror aerostack2's `mission.py::_publish_reference` (triangle)
+    // and `mission_moving_path.py::_broadcast_tick` (continuous): this
+    // topic carries the **target the drone is currently asked to reach**
+    // — the active waypoint in triangle, the moving TF sample in
+    // moving_path. The caller picks the right value through
+    // `row.mission_pose_ref_position`; orientation is identity in both
+    // backends.
+    impl_->save_pose_reference(t, row.mission_pose_ref_position,
+                               Eigen::Vector4d(1.0, 0.0, 0.0, 0.0));
+  }
+  if (row.publish_mission_signals) {
+    // Per-axis linear velocity reference from the generator (same delay applied).
+    impl_->save_twist_reference(t, row.trajectory_velocity);
+    // Position reference (waypoint target, stepwise — identical across cases).
+    impl_->save_vector3(kTopicMotionRefPosition, t, row.reference_position);
+  }
 
   // Actuation: thrust + body rate command.
   impl_->save_actuation(t, row.thrust_n, row.command_angular_velocity);
@@ -110,17 +138,51 @@ void UnifiedMcapLogger::logRow(const LogRow& row) {
   const std::vector<double> motors{row.motor_w(0), row.motor_w(1), row.motor_w(2), row.motor_w(3)};
   impl_->save_float64_multi_array(kTopicMotorSpeeds, t, motors, {4u});
 
-  // Compute times and delays (all in microseconds, already).
-  impl_->save_float64(kTopicControllerCompute, t, row.controller_compute_time_us);
-  impl_->save_float64(kTopicGeneratorUpdate, t, row.generator_update_time_us);
-  impl_->save_float64(kTopicGeneratorEval, t, row.generator_eval_time_us);
-  impl_->save_float64(kTopicControllerDelay, t, row.controller_delay_applied_us);
-  impl_->save_float64(kTopicGeneratorDelay, t, row.generator_delay_applied_us);
+  // Compute times and delays. The topic carries the value in **seconds**
+  // (aerostack2 convention — see
+  // ``as2_motion_controller/src/controller_handler.cpp:727`` and the
+  // matching ``_TIMING_SECONDS_TO_US`` factor in
+  // ``mav_flight_review.flight_frame``). The LogRow fields stay in
+  // microseconds for in-process consumers, so we divide by 1e6 right
+  // before each ``save_float64`` call.
+  constexpr double kUsToSec = 1.0e-6;
+  impl_->save_float64(kTopicControllerCompute, t, row.controller_compute_time_us * kUsToSec);
+  impl_->save_float64(kTopicGeneratorUpdate, t, row.generator_update_time_us * kUsToSec);
+  impl_->save_float64(kTopicGeneratorEval, t, row.generator_eval_time_us * kUsToSec);
+  impl_->save_float64(kTopicControllerDelay, t, row.controller_delay_applied_us * kUsToSec);
+  impl_->save_float64(kTopicGeneratorDelay, t, row.generator_delay_applied_us * kUsToSec);
 
-  // Scheduler state.
-  impl_->save_int32(kTopicWaypointIndex, t, row.waypoint_index);
-  impl_->save_int32(kTopicHoverActive, t, row.hover_active ? 1 : 0);
-  impl_->save_float64(kTopicMaxSpeed, t, row.max_speed);
+  // Scheduler state. The three mission-only topics (`waypoint_index`,
+  // `max_speed`, `experiment_active`) and `hover_active` mirror
+  // aerostack2's latched semantics: each one is emitted only when its
+  // value changes since the last log row. The decision is computed in
+  // WaypointsSimulator and surfaced through the per-topic gate flags
+  // below so the resulting MCAP carries the same sparse-but-monotonic
+  // pattern the aerostack2 mission scripts produce.
+  if (row.publish_waypoint_index_change) {
+    impl_->save_int32(kTopicWaypointIndex, t, row.waypoint_index);
+  }
+  if (row.publish_max_speed_change) {
+    impl_->save_float64(kTopicMaxSpeed, t, row.max_speed);
+  }
+  if (row.publish_hover_active_change) {
+    impl_->save_int32(kTopicHoverActive, t, row.hover_active ? 1 : 0);
+  }
+  if (row.publish_experiment_active_change) {
+    impl_->save_int32(kTopicExperimentActive, t, row.experiment_active ? 1 : 0);
+  }
+
+  if (row.publishes_desired_velocity) {
+    impl_->save_twist_stamped(kTopicDesiredVelocity, t, row.desired_velocity);
+  }
+
+  if (row.publish_trajectory_horizon && !row.trajectory_horizon.empty()) {
+    // Mirror aerostack2's `motion_reference/trajectory` (TrajectorySetpoints).
+    // The default trajectory_reference_topic in mav_flight_review's MCAPLogger
+    // is already `/drone0/motion_reference/trajectory`, so no override is
+    // needed.
+    impl_->save_trajectory_reference(t, row.trajectory_horizon);
+  }
 }
 
 }  // namespace mpc_examples::framework

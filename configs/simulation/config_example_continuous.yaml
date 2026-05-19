@@ -1,0 +1,101 @@
+# Paper paper "moving_path" campaign config.
+#
+# Same plant + waypoint geometry as config_example.yaml, but mission_mode
+# is "continuous": WaypointsSimulator overrides settle_margin_s=0 and
+# scheduler_speed_factor=1.0 so the drone flows through every waypoint
+# without an idle hold. Mirrors aerostack2's mission_moving_path.py
+# (single follow_reference goal + gcopter offline fit).
+#
+# The 4 runs below are the moving_path counterparts of the 4 triangle
+# runs in config_example.yaml. Both binaries are involved:
+#   * run_position_examples picks the entries with scope: position
+#     (cascade PID + Pos-MPC, both consuming smooth gcopter pose samples
+#     directly as a continuously-moving waypoint target).
+#   * run_trajectory_examples picks the entries with scope: trajectory
+#     (Traj-MPC × gcopter / jerk_limited, both producing smooth refs the
+#     trajectory MPC tracks natively).
+
+sim_config:
+  # --- Simulation timing ------------------------------------------------------
+  sim_time: 160.0
+  model_dt: 0.001
+  controller_dt: 0.01
+  mpc_dt: 0.01
+  pid_dt: 0.01
+
+  # --- Mission parameters -----------------------------------------------------
+  max_speed: 1.0
+  hover_time: 5.0           # shorter than stepwise: no per-hop hover, only
+                            # the post-mission settle at the last waypoint
+  settle_margin_s: 0.0      # overridden to 0 by continuous mode anyway
+  scheduler_speed_factor: 1.0  # overridden to 1.0 by continuous mode anyway
+  mission_mode: continuous  # << continuous flow through every waypoint
+  path_facing: false
+
+  # --- Logging / runtime ------------------------------------------------------
+  output_format: mcap
+  benchmark: false
+  silent: true
+  parallel: false           # serial when called from the per-case scripts
+  controller_delay_mode: measured
+  controller_delay_fixed_s: 0.0
+  generator_delay_mode: measured
+  generator_delay_fixed_s: 0.0
+
+  # --- follow_reference emulation tuning --------------------------------------
+  # Parameters of the moving-target sampler / local-generator replanning
+  # loop. Lower threshold + period bring the emulation closer to pmpc's
+  # 200 Hz broadcaster + 1 cm modify_threshold; higher values reduce the
+  # frequency of polynomial replans (and the chance of LBFGS degeneracies).
+  # 0.1 m / 0.1 s gives the drone time to accelerate but lets the target
+  # advance smoothly through every waypoint at the cruise envelope.
+  target_modify_period_s: 0.2
+  target_modify_threshold_m: 1.0
+  target_start_delay_s: 0.0
+
+  # --- Waypoints (world frame, m) ---------------------------------------------
+  # Identical to config_example.yaml so the moving_path runs share the
+  # exact path of the triangle runs (only the per-waypoint settle differs).
+  waypoints:
+    - [00.0, 00.0, 10.0]    # takeoff
+    - [01.0, 00.0, 10.0]    # +X close
+    - [01.0, 01.0, 10.0]    # +Y close
+    - [01.0, 01.0, 11.0]    # +Z close
+    - [06.0, 01.0, 11.0]    # +X far
+    - [06.0, 06.0, 11.0]    # +Y far
+    - [06.0, 06.0, 06.0]    # -Z far (descent)
+    - [07.0, 07.0, 07.0]    # close diagonal
+    - [-2.0, -2.0, 12.0]    # far diagonal (sign reversal)
+    - [00.0, 00.0, 10.0]    # return to home
+
+  # --- Batch of controller × generator cases (paper moving_path phase) -------
+  runs:
+    # === Position scope (consumed by position_examples) ===
+    - controller: pid
+      generator: gcopter
+      enabled: true
+      scope: position
+      controller_config: configs/controllers/config_pid.yaml          # cascade
+      generator_config: configs/generators/config_gcopter.yaml
+
+    - controller: mpc_position
+      generator: gcopter
+      enabled: true
+      scope: position
+      controller_config: configs/controllers/config_mpc.yaml
+      generator_config: configs/generators/config_gcopter.yaml
+
+    # === Trajectory scope (consumed by trajectory_examples) ===
+    - controller: mpc_trajectory
+      generator: gcopter
+      enabled: true
+      scope: trajectory
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_gcopter.yaml
+
+    - controller: mpc_trajectory
+      generator: jerk_limited
+      enabled: true
+      scope: trajectory
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_jerk_limited.yaml

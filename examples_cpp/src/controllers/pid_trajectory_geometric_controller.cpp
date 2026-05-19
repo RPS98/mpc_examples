@@ -36,14 +36,19 @@ pid_controller::PIDParameters<double> parsePidParameters(const YAML::Node& node,
   params.Ki_gains = read_vec3("ki");
   params.Kd_gains = read_vec3("kd");
 
+  const auto read_vec_or_scalar = [&](const char* key) -> Eigen::Vector3d {
+    const YAML::Node child = node[key];
+    if (child.IsSequence()) {
+      return detail::readVector<3>(child, section + "." + key);
+    }
+    const double v = detail::readDoubleRequired(child, section + "." + key);
+    return Eigen::Vector3d::Constant(v);
+  };
   if (node["antiwindup_cte"]) {
-    const double v =
-        detail::readDoubleRequired(node["antiwindup_cte"], section + ".antiwindup_cte");
-    params.antiwindup_cte = Eigen::Vector3d::Constant(v);
+    params.antiwindup_cte = read_vec_or_scalar("antiwindup_cte");
   }
   if (node["alpha"]) {
-    const double v = detail::readDoubleRequired(node["alpha"], section + ".alpha");
-    params.alpha   = Eigen::Vector3d::Constant(v);
+    params.alpha = read_vec_or_scalar("alpha");
   }
   if (node["a_max"]) {
     const double v = detail::readDoubleRequired(node["a_max"], section + ".a_max");
@@ -132,6 +137,8 @@ framework::ControlCommand PidTrajectoryGeometricController::computeCommand(
   const Eigen::Quaterniond orientation = state.getOrientationVector();
 
   const auto t0 = std::chrono::high_resolution_clock::now();
+
+  last_desired_velocity_ = ref.velocity;
 
   const Eigen::Vector3d acc_des = traj_ctrl_->trajectoryToLinearAcceleration(
       position, velocity, ref.position, ref.velocity, ref.acceleration, control_period_);

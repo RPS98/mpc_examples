@@ -111,10 +111,27 @@ struct CaseResult {
   std::string error;
 };
 
-// Only generators that consume a raw waypoint reference are valid for
-// position_examples.
+// Generators accepted by ``position_examples``. The historical scope was
+// only ``waypoints`` (stepwise carrot), but for the paper's moving_path
+// phase we also need ``mpc_position`` (and the cascade ``pid``) to follow
+// a *continuously-moving* target produced by gcopter / jerk_limited.
+// Since the position-scope controllers consume only the ``kPosition``
+// field, feeding them a smooth-generator pose sample at each tick
+// reproduces the aerostack2 ``follow_reference`` semantics without any
+// adapter changes inside the controller itself.
 bool isPositionRun(const mpc_examples::RunSpec& spec) {
-  return spec.generator == mpc_examples::framework::GeneratorKeys::kWaypoints;
+  // Explicit scope wins; otherwise, fall back to the legacy generator
+  // whitelist (any generator that the position factory knows how to build).
+  if (!spec.scope.empty()) return spec.scope == "position";
+  using mpc_examples::framework::GeneratorKeys;
+  // Smooth generators (gcopter / jerk_limited / dynamic) are wired into
+  // `factories_position::makeGenerator`. `kMavTrajGen` is intentionally
+  // left out of the position scope to keep the polynomial path generator
+  // a trajectory-binary-only feature.
+  return spec.generator == GeneratorKeys::kWaypoints ||
+         spec.generator == GeneratorKeys::kGcopter ||
+         spec.generator == GeneratorKeys::kJerkLimited ||
+         spec.generator == GeneratorKeys::kDynamic;
 }
 
 // Executes one (controller, generator) case. Set `print_banner` to false when

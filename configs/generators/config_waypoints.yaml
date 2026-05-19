@@ -1,3 +1,9 @@
-# Waypoint reference generator config (simple clamping generator).
-d_max: 2.0              # [m] max reference distance from current position
-reach_threshold: 0.1    # [m] waypoint acceptance radius
+# Waypoint reference generator config.
+#
+# The generator emits the active waypoint position verbatim every tick;
+# each controller is responsible for ramping its own response internally
+# (PidPositionGeometricController.saturateVelocity,
+# MpcPositionController.setProgressiveReferences). This mirrors the
+# aerostack2 convention where the motion handler publishes the raw
+# target pose and the plugin builds its ramp.
+reach_threshold: 0.1    # [m] minimum planar distance for path-facing yaw alignment

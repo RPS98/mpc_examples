@@ -40,14 +40,28 @@ ensure_output_dir() {
   mkdir -p "${OUTPUT_DIR}"
 }
 
-# post_run_review <run_dir> [--no-show] [--no-save]
+# post_run_review <run_dir> [--show] [--no-save]
 # Runs compute_metrics and the mav_flight_review dashboard for the given
 # run directory. Called automatically by run_one_cpp / run_one_py so every
 # single-combination script gets metrics + plots without extra boilerplate.
+#
+# By default the interactive matplotlib windows are suppressed (PNGs are
+# still written under <run_dir>/plots/). Pass --show to opt back in.
 post_run_review() {
   local run_dir="${1:?post_run_review: run_dir required}"
   shift
+  # Default to non-interactive plotting; an explicit --show overrides it.
+  local args=("$@")
+  local has_show_flag=0
+  for arg in "${args[@]}"; do
+    case "${arg}" in
+      --show|--no-show) has_show_flag=1 ;;
+    esac
+  done
+  if [[ "${has_show_flag}" -eq 0 ]]; then
+    args+=(--no-show)
+  fi
   echo ""
   echo "[plot   ] ${run_dir}"
-  "${SCRIPT_DIR_ROOT}/plot.sh" "${run_dir}" "$@" || true
+  "${SCRIPT_DIR_ROOT}/plot.sh" "${run_dir}" "${args[@]}" || true
 }

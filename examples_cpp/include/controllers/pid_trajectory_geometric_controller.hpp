@@ -89,6 +89,12 @@ public:
   const std::string& name() const override { return name_; }
   double lastSolveTimeMicros() const override { return last_solve_us_; }
 
+  /// Reference velocity from the first sample (feedforward consumed by the
+  /// trajectory PID). Generators emit references already capped to
+  /// `max_speed`, so the value is implicitly saturated.
+  Eigen::Vector3d lastDesiredVelocity() const override { return last_desired_velocity_; }
+  bool providesDesiredVelocity() const override { return true; }
+
 private:
   Config cfg_;
   std::unique_ptr<pid_controllers::TrajectoryController<double>> traj_ctrl_;
@@ -96,6 +102,7 @@ private:
 
   double control_period_ = 0.01;
   double last_solve_us_  = 0.0;
+  Eigen::Vector3d last_desired_velocity_ = Eigen::Vector3d::Zero();
   std::string name_      = "PidTrajectoryGeometricController";
 };
 

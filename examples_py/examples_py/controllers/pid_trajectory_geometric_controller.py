@@ -109,6 +109,7 @@ class PidTrajectoryGeometricController(IController):
         self._geo_ctrl: Optional[GeometricController] = None
         self._control_period = 0.01
         self._last_solve_us = 0.0
+        self._last_desired_velocity = np.zeros(3, dtype=float)
         self._name = 'PidTrajectoryGeometricController'
 
     @staticmethod
@@ -194,6 +195,8 @@ class PidTrajectoryGeometricController(IController):
         velocity = np.asarray(state.linear_velocity, dtype=float)
         orientation = np.asarray(state.orientation, dtype=float)
 
+        self._last_desired_velocity = np.asarray(ref.velocity, dtype=float).copy()
+
         t0 = time.perf_counter()
         acc_des = self._traj_ctrl.trajectory_to_linear_acceleration(
             position,
@@ -223,3 +226,9 @@ class PidTrajectoryGeometricController(IController):
 
     def last_solve_time_micros(self) -> float:
         return self._last_solve_us
+
+    def last_desired_velocity(self) -> np.ndarray:
+        return self._last_desired_velocity
+
+    def provides_desired_velocity(self) -> bool:
+        return True

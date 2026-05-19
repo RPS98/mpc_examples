@@ -267,11 +267,12 @@ class GcopterGenerator(ITrajectoryGenerator):
             self._duration = 0.0
             return
 
-        # Two-waypoint hop. MINCO + L-BFGS converges fine for any non-degenerate
-        # segment; the pure-vertical degeneracy is handled inside gcopter_lib
-        # via OptimizationConfig::vertical_perturbation, so the adapter just
-        # hands (start, end) to the solver and trusts it to converge.
-        wps = [Waypoint(p0), Waypoint(self._target_wp)]
+        # Two-waypoint hop. Pin the initial velocity to the drone's current
+        # kinematics so consecutive segments stitch with C1 continuity;
+        # gcopter handles the pure-vertical degeneracy internally.
+        start_wp = Waypoint(p0)
+        start_wp.velocity = np.asarray(state.linear_velocity, dtype=float)
+        wps = [start_wp, Waypoint(self._target_wp)]
         ok = self._ctrl.generate(wps, self._cfg.drone_limits.max_velocity)
         if not ok:
             # Fall back to a static setpoint at next_waypoint.

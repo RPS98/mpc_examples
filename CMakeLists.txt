@@ -44,6 +44,28 @@ endif()
 include(CTest)
 
 # ---------------------------------------------------------------------------
+# Workspace layout
+# ---------------------------------------------------------------------------
+# The MAV showcase libs (mav_simulator, mpc, generators, mav_flight_review)
+# used to live as git submodules under thirdparty/. They now live as sibling
+# directories under the project_controller_pmpc workspace root
+# (`<workspace>/mav_libs/<name>`), populated by `vcs import < pmpc.repos`.
+#
+# CMAKE_SOURCE_DIR == simulation/mav for this build. Two levels up is the
+# repo / workspace root.
+set(PMPC_WORKSPACE_ROOT "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
+    "Path to the project_controller_pmpc repo/workspace root (where mav_libs/ lives).")
+get_filename_component(PMPC_WORKSPACE_ROOT "${PMPC_WORKSPACE_ROOT}" ABSOLUTE)
+set(MAV_LIBS_DIR "${PMPC_WORKSPACE_ROOT}/mav_libs")
+if(NOT IS_DIRECTORY "${MAV_LIBS_DIR}")
+  message(FATAL_ERROR
+    "${PROJECT_NAME}: MAV_LIBS_DIR=${MAV_LIBS_DIR} does not exist. "
+    "Run `./docker/scripts/setup_workspace.sh` (or `vcs import < pmpc.repos`) "
+    "from the repo root to populate it.")
+endif()
+message(STATUS "${PROJECT_NAME}: MAV_LIBS_DIR=${MAV_LIBS_DIR}")
+
+# ---------------------------------------------------------------------------
 # Centralized Python mirror root
 # ---------------------------------------------------------------------------
 # Every thirdparty submodule that ships a Python package mirrors its compiled
@@ -65,14 +87,15 @@ message(STATUS "${PROJECT_NAME}: Python packages will be gathered under ${PYBIND
 set(MAV_FLIGHT_REVIEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MAV_FLIGHT_REVIEW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(MAV_FLIGHT_REVIEW_BUILD_PYBIND   ${BUILD_PYBIND} CACHE BOOL "" FORCE)
-add_subdirectory(thirdparty/mav_flight_review)
+add_subdirectory("${MAV_LIBS_DIR}/mav_flight_review"
+                 "${CMAKE_BINARY_DIR}/mav_libs/mav_flight_review")
 
 # Expose mav_flight_review's Python package under PYBIND_PY_MIRROR_ROOT so
 # `import mav_flight_review` works with a single PYTHONPATH entry. Matches
 # the symlink pattern used by mpc / mav_simulator.
 if(BUILD_PYBIND)
   file(MAKE_DIRECTORY "${PYBIND_PY_MIRROR_ROOT}")
-  set(_mfr_src "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/mav_flight_review/pybind/python/mav_flight_review")
+  set(_mfr_src "${MAV_LIBS_DIR}/mav_flight_review/pybind/python/mav_flight_review")
   set(_mfr_dst "${PYBIND_PY_MIRROR_ROOT}/mav_flight_review")
   if(EXISTS "${_mfr_dst}" OR IS_SYMLINK "${_mfr_dst}")
     file(REMOVE_RECURSE "${_mfr_dst}")
@@ -89,21 +112,27 @@ if(BUILD_PYBIND)
 endif()
 
 # Quadrotor simulator (mav_model + mav_controllers + mav_sensors composition).
-add_subdirectory(thirdparty/mav_simulator)
+add_subdirectory("${MAV_LIBS_DIR}/mav_simulator"
+                 "${CMAKE_BINARY_DIR}/mav_libs/mav_simulator")
 
 # Trajectory generators. Save/restore BUILD_TESTING for submodules that pull
 # in test-only dependencies through their own CMakeLists.
 set(_mpc_examples_build_testing_saved ${BUILD_TESTING})
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-add_subdirectory(thirdparty/dynamic_trajectory_generator)
+add_subdirectory("${MAV_LIBS_DIR}/dynamic_trajectory_generator"
+                 "${CMAKE_BINARY_DIR}/mav_libs/dynamic_trajectory_generator")
 set(BUILD_TESTING ${_mpc_examples_build_testing_saved} CACHE BOOL "" FORCE)
 
-add_subdirectory(thirdparty/trajectory_generator_jerk_limited)
-add_subdirectory(thirdparty/gcopter_lib)
-add_subdirectory(thirdparty/mav_trajectory_generation_lib)
+add_subdirectory("${MAV_LIBS_DIR}/trajectory_generator_jerk_limited"
+                 "${CMAKE_BINARY_DIR}/mav_libs/trajectory_generator_jerk_limited")
+add_subdirectory("${MAV_LIBS_DIR}/gcopter_lib"
+                 "${CMAKE_BINARY_DIR}/mav_libs/gcopter_lib")
+add_subdirectory("${MAV_LIBS_DIR}/mav_trajectory_generation_lib"
+                 "${CMAKE_BINARY_DIR}/mav_libs/mav_trajectory_generation_lib")
 
 # MPC controllers (acados-generated code, position + trajectory variants).
-add_subdirectory(thirdparty/mpc)
+add_subdirectory("${MAV_LIBS_DIR}/mpc"
+                 "${CMAKE_BINARY_DIR}/mav_libs/mpc")
 
 # ---------------------------------------------------------------------------
 # Project targets
@@ -164,27 +193,27 @@ if(BUILD_TESTING)
 
     # mav_simulator (and its libs)
     register_pytest_suite(pytest_mav_simulator
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/pybind/tests")
     register_pytest_suite(pytest_mav_model
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_model/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_model/pybind/tests")
     register_pytest_suite(pytest_mav_model_definition
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_model/model_definition/pytests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_model/model_definition/pytests")
     register_pytest_suite(pytest_mav_controllers
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_controllers/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_controllers/pybind/tests")
     register_pytest_suite(pytest_mav_pid_controllers
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_controllers/controllers/pid_controllers/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_controllers/controllers/pid_controllers/pybind/tests")
     register_pytest_suite(pytest_mav_geometric_controller
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_controllers/controllers/geometric_controller/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_controllers/controllers/geometric_controller/pybind/tests")
     register_pytest_suite(pytest_mav_indi_controller
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_controllers/controllers/indi_controller/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_controllers/controllers/indi_controller/pybind/tests")
     register_pytest_suite(pytest_mav_pid_controller_lib
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_controllers/libs/pid_controller/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_controllers/libs/pid_controller/pybind/tests")
     register_pytest_suite(pytest_mav_sensors
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_simulator/libs/mav_sensors/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_simulator/libs/mav_sensors/pybind/tests")
 
     # MCAP / CSV telemetry backend
     register_pytest_suite(pytest_mav_flight_review
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_flight_review/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_flight_review/pybind/tests")
 
     # examples_py — Python half of the showcase, tests per adapter and framework.
     if(EXISTS "${CMAKE_SOURCE_DIR}/examples_py/tests")
@@ -199,13 +228,13 @@ if(BUILD_TESTING)
 
     # Trajectory generators
     register_pytest_suite(pytest_trajectory_generator_jerk_limited
-      "${CMAKE_SOURCE_DIR}/thirdparty/trajectory_generator_jerk_limited/pybind/tests")
+      "${MAV_LIBS_DIR}/trajectory_generator_jerk_limited/pybind/tests")
     register_pytest_suite(pytest_gcopter_lib
-      "${CMAKE_SOURCE_DIR}/thirdparty/gcopter_lib/pybind/tests")
+      "${MAV_LIBS_DIR}/gcopter_lib/pybind/tests")
     register_pytest_suite(pytest_dynamic_trajectory_generator
-      "${CMAKE_SOURCE_DIR}/thirdparty/dynamic_trajectory_generator/pybind/tests")
+      "${MAV_LIBS_DIR}/dynamic_trajectory_generator/pybind/tests")
     register_pytest_suite(pytest_mav_trajectory_generation_lib
-      "${CMAKE_SOURCE_DIR}/thirdparty/mav_trajectory_generation_lib/pybind/tests")
+      "${MAV_LIBS_DIR}/mav_trajectory_generation_lib/pybind/tests")
   else()
     message(WARNING
       "pytest not found — Python test suites will NOT be registered in ctest. "

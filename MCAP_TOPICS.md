@@ -46,14 +46,17 @@ Written together by `MCAPLogger::save_state` ([mcap_logger.hpp:165](thirdparty/m
 ### Motion reference
 
 The built-in `motion_reference/pose` channel of `mav_flight_review` is
-remapped to `motion_reference/trajectory` so the stepwise waypoint target
-can take its own dedicated channel
+routed to `debug/mission/reference/pose` (aerostack2-native) so the
+reviewer's hardcoded `_TOPIC_POSE_REF` in
+`mav_flight_review/flight_frame.py` picks it up automatically. The
+stepwise waypoint target keeps its dedicated `motion_reference/position`
+channel
 ([unified_mcap_logger.cpp:51](examples_cpp/src/framework/unified_mcap_logger.cpp#L51),
 [unified_mcap_logger.py:129](examples_py/examples_py/framework/unified_mcap_logger.py#L129)).
 
 | Topic | Type | Rate | Content |
 | --- | --- | --- | --- |
-| `/drone0/motion_reference/trajectory` | `geometry_msgs/msg/PoseStamped` | `controller_dt` | Smooth generator sample consumed by the controller (computation delay applied) |
+| `/drone0/debug/mission/reference/pose` | `geometry_msgs/msg/PoseStamped` | `controller_dt` | Smooth generator sample consumed by the controller (computation delay applied). Picked up by `mav_flight_review.flight_frame` as `pose_reference`. |
 | `/drone0/motion_reference/twist` | `geometry_msgs/msg/TwistStamped` (linear only) | `controller_dt` | Linear-velocity reference from the generator (same delay applied) |
 | `/drone0/motion_reference/position` | `geometry_msgs/msg/Vector3` | `controller_dt` | Active waypoint target — stepwise, no delay; identical across all controller × generator combinations |
 
@@ -86,6 +89,7 @@ Defined as constants in [unified_mcap_logger.cpp:18-22](examples_cpp/src/framewo
 | --- | --- | --- | --- |
 | `/drone0/debug/mission/waypoint_index` | `std_msgs/msg/Int32` | `controller_dt` | Active waypoint index from `WaypointScheduler` |
 | `/drone0/debug/mission/hover_active` | `std_msgs/msg/Int32` (0/1) | `controller_dt` | `1` once the mission is over and the hold-after-mission phase begins |
+| `/drone0/debug/mission/experiment_active` | `std_msgs/msg/Int32` (0/1) | `controller_dt` | Mirror of aerostack2's latched `Bool` topic. `1` while the mission body is running (excludes the first waypoint, which acts as implicit takeoff, and the final hover). Picked up by `mav_flight_review.flight_frame::_TOPIC_EXPERIMENT_ACTIVE` and used as a fallback mask for `tracking_rmse_m` when `waypoint_index`-based per-segment masking is unavailable. |
 | `/drone0/debug/mission/max_speed` | `std_msgs/msg/Float64` | `controller_dt` | `sim_config.max_speed` (constant per run, single source of truth) |
 
 ### Run metadata (single-shot at `t = 0`)
@@ -118,10 +122,11 @@ Emitted once in the `UnifiedMcapLogger` constructor
   `output_format: csv` the framework switches to `UnifiedCsvLogger` and
   this document does not apply.
 - The remapping of the built-in `motion_reference/pose` channel to
-  `/drone0/motion_reference/trajectory` happens at logger construction
+  `/drone0/debug/mission/reference/pose` happens at logger construction
   ([unified_mcap_logger.cpp:51](examples_cpp/src/framework/unified_mcap_logger.cpp#L51)).
-  The free `pose` slot is then reused for the stepwise waypoint target via
-  `motion_reference/position` (`Vector3`).
+  The aerostack2-native naming is required for the reviewer's hardcoded
+  `_TOPIC_POSE_REF`; the stepwise waypoint target is published on the
+  dedicated `motion_reference/position` (`Vector3`) channel.
 - Frame summary: `self_localization/*` and `motion_reference/*` are in
   `earth`, except angular-velocity components of state/command twists,
   which are in `drone0/base_link`. `actuator_command/*` are body-frame.

@@ -25,7 +25,15 @@ from examples_py.runs._runner import run_with_filter
 
 
 def _is_position_run(spec: RunSpec) -> bool:
-    return spec.generator == 'waypoints'
+    # Explicit scope wins; otherwise, the legacy generator-based whitelist.
+    if spec.scope:
+        return spec.scope == 'position'
+    # Smooth generators (gcopter / jerk_limited / dynamic) are accepted in
+    # the position scope so the paper's moving_path phase can feed the
+    # cascade PID and Pos-MPC controllers with a continuously-moving
+    # target (aerostack2 follow_reference parity). mav_traj_gen stays
+    # trajectory-binary-only.
+    return spec.generator in ('waypoints', 'gcopter', 'jerk_limited', 'dynamic')
 
 
 def main() -> int:

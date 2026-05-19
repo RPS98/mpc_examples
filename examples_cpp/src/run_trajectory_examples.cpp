@@ -119,6 +119,8 @@ struct CaseResult {
 
 // Only full-trajectory generators are valid for trajectory_examples.
 bool isTrajectoryRun(const mpc_examples::RunSpec& spec) {
+  // Explicit scope wins; otherwise, the legacy generator-based check.
+  if (!spec.scope.empty()) return spec.scope == "trajectory";
   return spec.generator == mpc_examples::framework::GeneratorKeys::kGcopter ||
          spec.generator == mpc_examples::framework::GeneratorKeys::kJerkLimited ||
          spec.generator == mpc_examples::framework::GeneratorKeys::kDynamic ||

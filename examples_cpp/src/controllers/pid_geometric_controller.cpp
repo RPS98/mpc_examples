@@ -122,6 +122,17 @@ void PidGeometricController::initialize(const mav_model::State& /*initial_state*
   if (control_period_ <= 0.0) {
     throw std::invalid_argument("PidGeometricController: example_cfg.pid_dt must be > 0.");
   }
+  // Tighten the position-loop velocity cap to the cruise envelope advertised
+  // by the scheduler (`max_speed * scheduler_speed_factor`). aerostack2's
+  // `mission.py` passes the same effective speed via `goto(..., speed=...)`,
+  // so both backends clip the position→velocity output at the same value.
+  // When the user runs in `continuous` mission_mode (factor forced to 1.0
+  // elsewhere), this collapses to the legacy `max_speed`.
+  const double effective_max_speed =
+      example_cfg.max_speed * example_cfg.scheduler_speed_factor;
+  if (effective_max_speed > 0.0) {
+    cfg_.v_max = effective_max_speed;
+  }
 
   pid_controllers::PositionControllerParameters<double> pos_params;
   pos_params.pid_parameters = cfg_.position_pid_params;

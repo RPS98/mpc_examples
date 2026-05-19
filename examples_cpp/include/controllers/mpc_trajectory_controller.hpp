@@ -36,13 +36,20 @@ namespace mpc_examples::adapters {
 class MpcTrajectoryController : public framework::IController {
 public:
   struct Config {
-    std::string mpc_yaml_path;  //!< Path to the acados MPC YAML definition.
+    std::string mpc_yaml_path;        //!< Path to the acados MPC YAML definition.
+    double max_vel_percentage = 1.0;  //!< Safety knob in (0, 1] applied to sqrt(uh).
   };
 
   explicit MpcTrajectoryController(const Config& cfg);
 
   /**
    * @brief Load the adapter configuration from a YAML file.
+   *
+   * Expected structure (mirrors config_mpc_trajectory.yaml):
+   * @code
+   * mpc:
+   *   max_vel_percentage: 1.0  # optional (default 1.0)
+   * @endcode
    *
    * The @p path is stored as @c mpc_yaml_path and later passed to
    * acados_mpc::configureMpcFromYaml() during initialize().
@@ -68,6 +75,11 @@ public:
   const std::string& name() const override { return name_; }
   double lastSolveTimeMicros() const override { return last_solve_us_; }
 
+  /// Stage-1 predicted linear velocity in world frame (the solver's
+  /// immediate prediction after applying the first control input).
+  Eigen::Vector3d lastDesiredVelocity() const override { return last_desired_velocity_; }
+  bool providesDesiredVelocity() const override { return true; }
+
 private:
   Config cfg_;
   std::unique_ptr<acados_mpc::MPC> mpc_;
@@ -76,6 +88,7 @@ private:
   double dt_horizon_     = 0.05;
   int horizon_steps_     = 0;
   double last_solve_us_  = 0.0;
+  Eigen::Vector3d last_desired_velocity_ = Eigen::Vector3d::Zero();
   std::string name_      = "MpcTrajectoryController";
 };
 

@@ -93,11 +93,19 @@ void JerkLimitedGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoin
     return;
   }
 
-  // Two-waypoint hop. The one-shot API resets internally to waypoints[0]
-  // with v=0, a=0 — same as the rest of p2p adapters (gcopter, dynamic).
-  // The settle margin in the WaypointScheduler absorbs the resulting v0
-  // discontinuity at segment boundaries.
-  std::vector<tg::Waypoint> wps = {tg::Waypoint(p0), tg::EndWaypoint(next_waypoint)};
+  // Two-waypoint hop. Pin the C1 initial conditions of the segment to the
+  // live drone state (v0 = state.linear_velocity, a0 = 0) so the
+  // jerk-limited integrator stitches continuously across replans —
+  // matching the gcopter adapter's `wp[0].velocity = state.linear_velocity`
+  // pattern and the aerostack2 plugin behaviour (the trajectory_generator
+  // base class feeds the live VehiclePose+VehicleTwist into
+  // updateWaypoints / generate). Without this the integrator always
+  // starts from rest and every replan reactive to a follow_reference
+  // modify injects a step-discontinuity in the commanded velocity.
+  tg::Waypoint start(p0);
+  start.velocity = state.getLinearVelocityVector();
+  std::vector<tg::Waypoint> wps = {std::move(start),
+                                    tg::EndWaypoint(next_waypoint)};
   has_plan_                     = ctrl_->generate(wps, max_speed_);
   if (!has_plan_) {
     duration_ = 0.0;

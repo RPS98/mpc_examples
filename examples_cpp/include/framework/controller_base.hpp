@@ -114,22 +114,17 @@ public:
   virtual double lastSolveTimeMicros() const = 0;
 
   /**
-   * @return Saturated velocity setpoint produced by the controller's outer
-   *         loop, if it computes one (e.g. cascaded position PID). Default
-   *         is the zero vector.
+   * @return Saturated linear velocity the controller is actively tracking
+   *         (post-saturation). Position-PID returns its first stage output;
+   *         MPC returns the stage-1 predicted velocity. Default: zero.
    *
-   * Used by WaypointsSimulator to override the generator's velocity reference
-   * in the log when the controller's own intermediate setpoint is what the
-   * cascaded inner loop is actually tracking.
+   * Mirrors the `debug/controller/desired_velocity` topic published by the
+   * aerostack2 control plugins.
    */
-  virtual Eigen::Vector3d lastVelocityCommand() const { return Eigen::Vector3d::Zero(); }
+  virtual Eigen::Vector3d lastDesiredVelocity() const { return Eigen::Vector3d::Zero(); }
 
-  /**
-   * @return True iff lastVelocityCommand() returns a meaningful value that
-   *         should override the generator's velocity reference in the log.
-   *         Default: false (generator's velocity is logged as-is).
-   */
-  virtual bool providesVelocityCommand() const { return false; }
+  /// @return True iff lastDesiredVelocity() returns a meaningful value.
+  virtual bool providesDesiredVelocity() const { return false; }
 };
 
 }  // namespace mpc_examples::framework

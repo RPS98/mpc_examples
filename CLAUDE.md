@@ -62,7 +62,6 @@ configs/
 │                                   # config_pid_trajectory.yaml,
 │                                   # config_mpc.yaml, config_mpc_trajectory.yaml
 ├── generators/                     # config_{waypoints,jerk_limited,gcopter,dynamic,mav_traj_gen}.yaml
-│                                   # + config_waypoints_mpc.yaml (tuning específico mpc_position)
 └── simulation/                     # config_example.yaml + config_simulator.yaml
 
 libs/                               # acados-generated solvers (acados_{position,trajectory}_mpc)
@@ -105,8 +104,11 @@ Documentadas en detalle en los headers. Resumen:
   cambiar de waypoint; `update(t, state)`; `evaluate(t) -> ReferenceSample`;
   `providedReferenceFields()`.
 - **`WaypointScheduler`** decide el cambio de waypoint **por tiempo**:
-  `t_switch[i] = t_switch[i-1] + distance/max_speed + settle_margin_s`.
+  `t_switch[i] = t_switch[i-1] + distance/(max_speed*scheduler_speed_factor) + settle_margin_s`.
   Garantiza que las combinaciones reciben el cambio en el mismo `t_sim`.
+  El factor (≤ 1) modela que ningún generador real sostiene `max_speed`
+  durante todo el segmento (gcopter es campana, jerk_limited tiene rampas,
+  el carrot de waypoints satura el cascade ligeramente por debajo).
 - **`DelayBuffer<T>`** modela latencia de cómputo (controller + generator).
   Modo `measured` (wall-clock real por iteración) o `fixed` (YAML-forzado).
 - **`ReferenceField`** bitmask: `kPosition | kVelocity | kAcceleration`. La
@@ -114,7 +116,8 @@ Documentadas en detalle en los headers. Resumen:
   (warning si el generador no cubre todo lo que el controlador pide).
 - **`ExampleConfig`** (parseada de `configs/simulation/config_example.yaml`):
   `sim_time`, `model_dt`, `controller_dt`, `mpc_dt`, `pid_dt`, `max_speed`,
-  `hover_time`, `path_facing`, `settle_margin_s`, `controller_delay_mode`,
+  `hover_time`, `path_facing`, `settle_margin_s`, `scheduler_speed_factor`,
+  `controller_delay_mode`,
   `controller_delay_fixed_s`, `generator_delay_mode`,
   `generator_delay_fixed_s`, `output_format`, `parallel`, `silent`,
   `benchmark`, `waypoints[]`, `runs[]`.

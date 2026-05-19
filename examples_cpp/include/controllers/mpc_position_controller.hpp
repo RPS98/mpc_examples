@@ -10,7 +10,10 @@
  *   - the generator provides a single position target (horizon size 1);
  *   - the adapter internally expands it into N+1 stage references via
  *     setProgressiveReferences(), sampling along the straight line that joins
- *     the current state to the goal at speed example_cfg.max_speed.
+ *     the current state to the goal at speed v_ref. The reference speed is
+ *     derived from the YAML's `constraints.uh[0]` (single source of truth):
+ *     `v_ref = sqrt(uh) * max_vel_percentage`. Matches the aerostack2
+ *     `as2_position_mpc_plugin` convention.
  *
  * Controllers with richer horizon expectations (velocity/acceleration feed-
  * forward) should use MpcTrajectoryController instead.
@@ -42,8 +45,8 @@ namespace mpc_examples::adapters {
 class MpcPositionController : public framework::IController {
 public:
   struct Config {
-    std::string mpc_yaml_path;       //!< Path to the acados MPC YAML definition.
-    double soft_speed_margin = 1.0;  //!< Fraction of max_speed used as soft speed bound.
+    std::string mpc_yaml_path;        //!< Path to the acados MPC YAML definition.
+    double max_vel_percentage = 1.0;  //!< Safety knob in (0, 1] applied to sqrt(uh).
   };
 
   explicit MpcPositionController(const Config& cfg);
@@ -54,7 +57,7 @@ public:
    * Expected structure (mirrors config_mpc.yaml):
    * @code
    * mpc:
-   *   soft_speed_margin: 1.0  # optional (default 1.0)
+   *   max_vel_percentage: 1.0  # optional (default 1.0)
    * @endcode
    *
    * The @p path itself is stored as @c mpc_yaml_path and later passed to
@@ -79,6 +82,11 @@ public:
   const std::string& name() const override { return name_; }
   double lastSolveTimeMicros() const override { return last_solve_us_; }
 
+  /// Stage-1 predicted linear velocity in world frame (the solver's
+  /// immediate prediction after applying the first control input).
+  Eigen::Vector3d lastDesiredVelocity() const override { return last_desired_velocity_; }
+  bool providesDesiredVelocity() const override { return true; }
+
 private:
   Config cfg_;
   std::unique_ptr<acados_mpc::MPC> mpc_;
@@ -88,6 +96,7 @@ private:
   double dt_horizon_     = 0.05;
   int horizon_steps_     = 0;
   double last_solve_us_  = 0.0;
+  Eigen::Vector3d last_desired_velocity_ = Eigen::Vector3d::Zero();
   std::string name_      = "MpcPositionController";
 };
 

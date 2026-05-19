@@ -1,67 +1,26 @@
-# Cascaded PID config tuned for the *position* scope (waypoints generator).
+# Cascaded PID config for the position scope (waypoints generator). The
+# trajectory-scope cases use config_pid_trajectory.yaml.
 #
-# The waypoint reference generator emits a position carrot clamped to d_max
-# from the drone (config_waypoints.yaml). Velocity reference is unavailable
-# in this scope so the PID closes the loop purely on position error.
-#
-# Trajectory-scope cases (jerk_limited / gcopter / mav_traj_gen) use
-# config_pid_trajectory.yaml instead — separate file with velocity
-# feedforward enabled and gains stiffened to keep up with the smooth
-# time-parameterised references emitted by those generators.
-#
-# The position-PID velocity output is norm-saturated to
-# sim_config.max_speed (config_example.yaml) inside the controller; that
-# is the single source of truth for cruise speed and is therefore not
-# duplicated here.
-
+# Values mirror simulation/config/config.yaml -> geometric_position_controller
+# (aerostack2). When launched through launch/<mission>/<combo>/mav.bash, the generator script
+# `simulation/scripts/generate_mpc_examples_configs.py` deep-merges that
+# aerostack2 block on top of this file, so a 1:1 base keeps the merge a
+# no-op and the direct single scripts run with the same tuning.
 controller:
   position:
-    # Stability-first tuning (2026-04-30 sweep). With d_max = 2.0 m and
-    # max_speed = 1.0 m/s, kp = 0.45 gives kp * d_max = 0.9, deliberately
-    # *below* the velocity clamp so the carrot release at each waypoint
-    # produces a softer v_des transient. Trade-off: long hops never reach
-    # the cruise plateau (||v|| saturates around 0.92 m/s instead of 1.0).
-    # Vertical kp left slightly stiffer for the 10 m takeoff and −5 m
-    # descent. ki/kd kept at zero — the velocity loop downstream provides
-    # all the damping that the cascade needs.
-    #
-    # Note (2026-04-30): the curved arc visible in the segment 9
-    # (7,7,7) → (−2,−2,12) of the 3D plot is left as a known
-    # characteristic of the cascade-PID + carrot pair. Empirical sweeps
-    # with isotropic kp/kd loops + slow yaw straighten the 3D path but
-    # degrade the overall feel of the run (slower vertical response,
-    # nose lag with path_facing). The structural difference vs the
-    # smooth-trajectory generators (jerk_limited / gcopter), which feed
-    # a fully planned (p_ref, v_ref, a_ref) along the line of sight, is
-    # part of what this showcase intends to expose.
-    kp: [0.45, 0.45, 0.6]
-    ki: [0.0, 0.0, 0.0]
+    kp: [1.2, 1.2, 2.0]
+    ki: [0.01, 0.01, 0.1]
     kd: [0.0, 0.0, 0.0]
     antiwindup_cte: 1.0
     alpha: 0.2
   velocity:
-    # Stability-first tuning (2026-04-30 sweep). The previous [1.6, 1.6, 2.0]
-    # / [1.3, 1.3, 1.8] tuning produced two failure modes on the demo
-    # mission: a vz overshoot to −1.35 m/s on the −5 m descent (z dipped
-    # to ~9 m) and a 2.4 m/s ||v|| spike right after the 13.7 m diagonal.
-    # Both were the cascade over-correcting the v_des step that the
-    # position PID emits when the waypoint switches. Lowering the
-    # velocity-loop bandwidth (kp 1.6→1.0, kd 1.3→0.7) eliminates both.
-    # alpha = 0.06 is a heavier low-pass on the derivative term to
-    # attenuate the high-frequency content visible in vx during the
-    # short hops at 15-30 s. ki kept at 0 (anti-windup not needed).
-    kp: [1.0, 1.0, 1.3]
-    ki: [0.0, 0.0, 0.0]
-    kd: [0.7, 0.7, 1.0]
+    kp: [1.0, 1.0, 1.5]
+    ki: [0.02, 0.02, 0.2]
+    kd: [0.50, 0.50, 0.7]
     antiwindup_cte: 0.4
-    alpha: 0.06
+    alpha: 0.1
     saturation_upper: [10.0, 10.0, 15.0]
     saturation_lower: [-10.0, -10.0, -15.0]
   geometric:
-    mass: 1.140
-    # Softer attitude bandwidth than the previous [6, 6, 3] tuning. The
-    # stiffer values excited inner-loop dynamics during diagonal segments,
-    # contributing to the ||v|| spike at t≈88-92 s. [4.5, 4.5, 2.5] yields
-    # cleaner thrust-vector tracking at the price of a longer settle on
-    # segment 9 (~12-13 s vs 10.7 s) — acceptable.
-    rotation_kp: [4.5, 4.5, 2.5]
+    mass: 1.233
+    rotation_kp: [4.0, 4.0, 2.0]

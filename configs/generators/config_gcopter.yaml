@@ -1,39 +1,35 @@
 # GCOPTER polytope-SFC trajectory generator config.
 trajectory_generator:
-  corridor_margin: 2.0           # [m] AABB half-margin per face for the safe flight corridor
-  waypoint_margin: 0.2           # [m] pinch half-margin at intermediate waypoints (<= 0 disables)
+  corridor_margin: 0.1           # [m] AABB half-margin per face for the safe flight corridor
+  waypoint_margin: 0.1           # [m] pinch half-margin at intermediate waypoints (<= 0 disables)
   waypoint_anchor_radius: 0.5    # [m] anchor point offset along the path (<= 0 disables)
 
 drone_params:
-  mass: 1.140                 # [kg]
-  gravity: 9.8                # [m/s^2]
-  horizontal_drag: 0.70       # [-] c_h
-  vertical_drag: 0.80         # [-] c_v
+  # The flatness model in gcopter is normalised on a unit-mass body; the
+  # actual plant mass is set in config_simulator.yaml.
+  mass: 1.0                   # [kg]
+  gravity: 9.81               # [m/s^2]
+  horizontal_drag: 0.1        # [-] c_h
+  vertical_drag: 0.1          # [-] c_v
   parasitic_drag: 0.01        # [-] c_p
-  speed_smooth_factor: 1.0e-4 # [-] epsilon_v
+  speed_smooth_factor: 0.01   # [-] epsilon_v
 
 drone_limits:
   # max_velocity is taken from configs/simulation/config_example.yaml (sim_config.max_speed).
-  max_body_rate: 3.0          # [rad/s]
-  max_tilt_angle: 3.0         # [rad]
+  max_body_rate: 6.0          # [rad/s]
+  max_tilt_angle: 0.785       # [rad]
   min_thrust: 0.1             # [N]
-  max_thrust: 40.0            # [N]
+  max_thrust: 30.0            # [N]
 
-# GCOPTER is min-jerk by design: cost = MINCO_energy + Σ penalty + rho*Σtimes
-# (see thirdparty/gcopter_lib/.../gcopter.hpp::costFunctional). The output is
-# always a smooth bell-shaped velocity profile that touches max_speed at the
-# crest, NEVER a sustained plateau. Empirically (2026-04-28 sweep) raising
-# time_weight from 20 to 500 or stretching segments to 30 m moves the profile
-# by <8 %; the bottleneck is body-rate / tilt / thrust penalties, not rho.
-# If a flat-top cruise is needed, use the jerk_limited generator instead.
-# Do not retune these weights expecting plateau — see CLAUDE.md "Gotchas".
+# L-BFGS optimizer tuning. High velocity_weight (1e4) keeps the cruise
+# under max_speed; high time_weight (512) avoids stretching segments.
 optimization:
-  time_weight: 20.0            # rho
-  position_weight: 1.0e+4
-  velocity_weight: 1.0e+4
-  body_rate_weight: 1.0e+4
-  tilt_weight: 1.0e+4
-  thrust_weight: 1.0e+5
-  smoothing_eps: 1.0e-2
+  time_weight: 512.0
+  position_weight: 10000.0
+  velocity_weight: 10000.0
+  body_rate_weight: 10000.0
+  tilt_weight: 10000.0
+  thrust_weight: 10000.0
+  smoothing_eps: 0.01
   integral_resolution: 16
-  rel_cost_tol: 1.0e-5
+  rel_cost_tol: 0.001

@@ -1,0 +1,107 @@
+# Evaluation mission for the controller-comparison campaign.
+#
+# Mirrors `simulation/config/mission_evaluate_keep.yaml` of
+# project_controller_pmpc:
+#   - 11 waypoints written with the symbolic tokens "D" (horizontal
+#     distance, m) and "H" (vertical step, m). Both are configured below
+#     under `sim_config.evaluate`. Tokens "0" / "D" / "H" / "-D" / "-H"
+#     and any numeric literal are accepted.
+#   - takeoff_height shifts every z component, so token "0" places the
+#     waypoint at the take-off altitude and "H" at takeoff_height + H.
+#   - The waypoint sequence covers all elementary motions: cardinal
+#     triangle, vertical climb / descent (pure and combined with
+#     horizontal motion), and an inverted triangle.
+#
+# To re-target the campaign, edit `evaluate.distance` and
+# `evaluate.height` (in metres) and the takeoff altitude. The waypoint
+# list itself stays unchanged.
+
+sim_config:
+  # --- Simulation timing ------------------------------------------------------
+  sim_time: 280.0
+  model_dt: 0.001
+  controller_dt: 0.002
+  mpc_dt: 0.01
+  pid_dt: 0.01
+
+  # --- Mission parameters -----------------------------------------------------
+  max_speed: 1.0
+  hover_time: 5.0
+  settle_margin_s: 4.0
+  scheduler_speed_factor: 0.4
+  path_facing: false
+  takeoff_height: 1.0           # z coord of all "0" tokens, in metres
+
+  evaluate:
+    distance: 10.0              # D — horizontal scale [m]
+    height:   10.0              # H — vertical step    [m]
+
+  # --- Logging / runtime ------------------------------------------------------
+  output_format: mcap
+  benchmark: false
+  silent: true
+  parallel: true
+
+  # --- Compute-delay model ----------------------------------------------------
+  controller_delay_mode: measured
+  controller_delay_fixed_s: 0.0
+  generator_delay_mode: measured
+  generator_delay_fixed_s: 0.0
+
+  # --- Waypoints (D/H tokens; resolved by the loader) -------------------------
+  waypoints:
+    # Triangle at z_lo
+    - ["D",  0,    0]    # forward z_lo
+    - ["D", "D",   0]    # right z_lo
+    - [ 0,   0,    0]    # diagonal back z_lo
+    # 3D moves combining horizontal + altitude transition
+    - ["D",  0,   "H"]   # forward + climb
+    - ["D", "D",   0]    # right + descent
+    - [ 0,   0,   "H"]   # diagonal back + climb
+    - ["D",  0,    0]    # forward + descent
+    - ["D", "D",  "H"]   # right + climb
+    - [ 0,   0,    0]    # diagonal back + descent
+    # Pure vertical
+    - [ 0,   0,   "H"]   # vertical climb
+    - [ 0,   0,    0]    # vertical descent
+
+  # --- Batch of controller × generator cases ----------------------------------
+  # Same combinations as config_example.yaml but pointing at the tuned
+  # configs (PID kp_xy=1.2, position MPC R angular=[10,10,3], trajectory
+  # MPC R[3]=5, gcopter velocity_weight=500).
+  runs:
+    - controller: pid
+      generator: waypoints
+      enabled: true
+      controller_config: configs/controllers/config_pid.yaml
+      generator_config: configs/generators/config_waypoints.yaml
+
+    - controller: mpc_position
+      generator: waypoints
+      enabled: true
+      controller_config: configs/controllers/config_mpc.yaml
+      generator_config: configs/generators/config_waypoints.yaml
+
+    - controller: pid
+      generator: gcopter
+      enabled: true
+      controller_config: configs/controllers/config_pid_trajectory.yaml
+      generator_config: configs/generators/config_gcopter.yaml
+
+    - controller: pid
+      generator: jerk_limited
+      enabled: true
+      controller_config: configs/controllers/config_pid_trajectory.yaml
+      generator_config: configs/generators/config_jerk_limited.yaml
+
+    - controller: mpc_trajectory
+      generator: gcopter
+      enabled: true
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_gcopter.yaml
+
+    - controller: mpc_trajectory
+      generator: jerk_limited
+      enabled: true
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_jerk_limited.yaml
