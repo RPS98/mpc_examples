@@ -1,4 +1,28 @@
-# All MAV showcase libs that used to live as submodules here have been
-# elevated to <workspace>/mav_libs/ and are now managed by pmpc.repos
-# (see the repo-root README). This file is kept empty to make the migration
-# explicit and to avoid `git submodule init` confusion.
+[submodule "thirdparty/mav_simulator"]
+	path = thirdparty/mav_simulator
+	url = git@github.com:RPS98/mav_simulator.git
+	branch = devel
+[submodule "thirdparty/mpc"]
+	path = thirdparty/mpc
+	url = https://github.com/RPS98/mpc.git
+	branch = refactor/library-example-split
+[submodule "thirdparty/mav_flight_review"]
+	path = thirdparty/mav_flight_review
+	url = git@github.com:RPS98/mav_flight_review.git
+	branch = main
+[submodule "thirdparty/dynamic_trajectory_generator"]
+	path = thirdparty/dynamic_trajectory_generator
+	url = https://github.com/miferco97/dynamic_trajectory_generator.git
+	branch = v1.1
+[submodule "thirdparty/gcopter_lib"]
+	path = thirdparty/gcopter_lib
+	url = https://github.com/aerostack2/gcopter_trajectory_generator_lib.git
+	branch = main
+[submodule "thirdparty/trajectory_generator_jerk_limited"]
+	path = thirdparty/trajectory_generator_jerk_limited
+	url = https://github.com/aerostack2/jerk_limited_trajectory_generator_lib.git
+	branch = main
+[submodule "thirdparty/mav_trajectory_generation_lib"]
+	path = thirdparty/mav_trajectory_generation_lib
+	url = https://github.com/aerostack2/mav_trajectory_generation_lib.git
+	branch = v1.0
