@@ -1,0 +1,38 @@
+# Consumed by MpccController. The top-level key is `mpcc:` (not `mpc:`)
+# so the file is visually distinct from config_mpc_trajectory.yaml; the
+# adapter rewrites the block to `mpc:` at runtime when handing it to the
+# upstream configure_mpc_from_yaml loader.
+
+controller:
+  ocp_json_file_path: ''   # empty → resolved relative to this YAML
+
+mpcc:
+  parameters:
+    mass: [1.14]
+    external_force: [0.0, 0.0, 0.0]
+    gains_contour_error: [15.0, 15.0]
+    gain_lag_error: [5.0]
+    gains_orientation: [0.1, 0.1, 10.0]
+    gains_actuation: [0.5, 1.0, 1.0, 2.0]
+    gains_actuation_theta_velocity: [1.0]
+    gain_progress: [0.01]
+    desired_theta_velocity: [4.0]
+    # Soft-constraint weights disabled in the demo (set to >0 in production).
+    softcontraints_max_weight: [0.0]
+    softcontraints_weight: [0.0]
+    softcontraints_alpha: [10.0]
+  constraints:
+    lbu: [0.01, -3.0, -3.0, -10.0, -1e-07]
+    ubu: [40.0,  3.0,  3.0,  10.0,  4.0]
+
+# Mission anchors. Empty → bundled demo via mission_loader.
+# Override at runtime with `CIRCUIT_MISSION_YAML` / `CIRCUIT_GATES_YAML`
+# env vars (set by run_circuit_example.{py,cpp} --mission-yaml/--gates-yaml).
+circuit:
+  mission_yaml: ''
+  gates_yaml: ''
+  desired_speed: 2.0
+  origin_offset_m: 0.0       # 0 → spline starts at the drone's takeoff pose
+  closing_exit_margin_m: 3.0
+  target_segment_length: 1.0
+  samples_per_segment: 400

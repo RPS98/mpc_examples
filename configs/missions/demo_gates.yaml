@@ -1,0 +1,5 @@
+# Simple 3-gate slalom (demo). World frame, ENU. [x, y, z, yaw_rad].
+gates_poses:
+  gate1: [5.0,   0.0, 1.5, 0.0]
+  gate2: [10.0, -2.0, 1.5, 0.0]
+  gate3: [15.0,  2.0, 1.5, 0.0]

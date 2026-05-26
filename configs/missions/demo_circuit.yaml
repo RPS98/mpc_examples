@@ -1,0 +1,18 @@
+# Demo mission: 3-gate slalom (see demo_gates.yaml).
+# Modifiers: vt = velocity tangent to gate, av = average speed (params.av).
+params:
+  num_laps: 1
+  ls: 1.0   # low speed scaler
+  av: 2.0   # average speed scaler [m/s]
+  hs: 3.0   # high speed scaler
+  wo: 0.0   # vertical offset
+
+takeoff_waypoints:  # [frame_id, modifiers, [x,y,z], [vx,vy,vz]]
+  - ["drone0/map", "ls_ny", [0.1, 0.0, 0.6], [0.0, 0.0, 1.0]]
+  - ["drone0/map", "ls_ny", [2.0, 0.0, 1.2], [1.0, 0.0, 0.0]]
+
+fly_waypoints:
+  - ["gate1", "wo_gp_vt_av", [0.0, 0.0, 0.0]]
+  - ["gate2", "wo_gp_vt_av", [0.0, 0.0, 0.0]]
+  - ["gate3", "wo_gp_vt_av", [0.0, 0.0, 0.0]]
+  - ["gate3", "wo_gp",       [3.0, 0.0, 0.0], [1.0, 0.0, 0.0]]

@@ -23,6 +23,7 @@ class ControllerKeys:
     PID = 'pid'
     MPC_POSITION = 'mpc_position'
     MPC_TRAJECTORY = 'mpc_trajectory'
+    MPCC = 'mpcc'
 
 
 class GeneratorKeys:
@@ -31,6 +32,7 @@ class GeneratorKeys:
     GCOPTER = 'gcopter'
     DYNAMIC = 'dynamic'
     MAV_TRAJ_GEN = 'mav_traj_gen'
+    CIRCUIT = 'circuit'
 
 
 def default_controller_config_path(name: str) -> str:
@@ -40,6 +42,8 @@ def default_controller_config_path(name: str) -> str:
         return 'configs/controllers/config_mpc.yaml'
     if name == ControllerKeys.MPC_TRAJECTORY:
         return 'configs/controllers/config_mpc_trajectory.yaml'
+    if name == ControllerKeys.MPCC:
+        return 'configs/controllers/config_mpcc.yaml'
     raise ValueError(f"Unknown controller name: '{name}'.")
 
 
@@ -54,6 +58,8 @@ def default_generator_config_path(name: str) -> str:
         return 'configs/generators/config_dynamic.yaml'
     if name == GeneratorKeys.MAV_TRAJ_GEN:
         return 'configs/generators/config_mav_traj_gen.yaml'
+    if name == GeneratorKeys.CIRCUIT:
+        return 'configs/generators/config_circuit.yaml'
     raise ValueError(f"Unknown generator name: '{name}'.")
 
 
@@ -85,6 +91,10 @@ def make_controller(name: str, config_path: str = '', is_trajectory_scope: bool 
     if name == ControllerKeys.MPC_TRAJECTORY:
         cfg = MpcTrajectoryController.load_config_from_yaml(path)
         return MpcTrajectoryController(cfg)
+    if name == ControllerKeys.MPCC:
+        from examples_py.controllers.mpcc_controller import MpccController
+        cfg = MpccController.load_config_from_yaml(path)
+        return MpccController(cfg)
     raise ValueError(f"Unknown controller name: '{name}'.")
 
 
@@ -121,4 +131,8 @@ def make_generator(name: str, config_path: str = '') -> ITrajectoryGenerator:
     if name == GeneratorKeys.MAV_TRAJ_GEN:
         cfg = MavTrajGenGenerator.load_config_from_yaml(path)
         return MavTrajGenGenerator(cfg)
+    if name == GeneratorKeys.CIRCUIT:
+        from examples_py.generators.circuit_generator import CircuitGenerator
+        cfg = CircuitGenerator.load_config_from_yaml(path)
+        return CircuitGenerator(cfg)
     raise ValueError(f"Unknown generator name: '{name}'.")

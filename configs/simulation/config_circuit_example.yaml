@@ -1,0 +1,55 @@
+# Closed-loop circuit showcase consumed by run_circuit_example.{py,cpp}.
+# Runs filtered by `generator == "circuit"`. Two cases pre-wired:
+#   - mpcc + circuit            (MPCC controller, self-contained spline)
+#   - mpc_trajectory + circuit  (trajectory MPC, samples from generator)
+
+sim_config:
+  # --- Timing [s] ---
+  sim_time: 35.0
+  model_dt: 0.001
+  controller_dt: 0.01
+  mpc_dt: 0.04
+  pid_dt: 0.01
+
+  # --- Mission [m/s, m, s] ---
+  max_speed: 4.0
+  hover_time: 20.0
+  settle_margin_s: 1.0
+  scheduler_speed_factor: 0.95
+  path_facing: false
+  # Small lift-off; matches the spline anchor so contour error stays bounded at t=0.
+  takeoff_altitude_m: 1.2
+
+  output_format: csv
+  benchmark: false
+  silent: true
+  parallel: false
+  controller_delay_mode: fixed
+  controller_delay_fixed_s: 0.0
+  generator_delay_mode: fixed
+  generator_delay_fixed_s: 0.0
+
+  # --- Waypoints (world frame, m). Bootstraps the scheduler; controllers
+  # ignore them (the circuit generator + MPCC build their own spline).
+  waypoints:
+    - [5.0,   0.0, 1.5]   # gate1
+    - [10.0, -2.0, 1.5]   # gate2
+    - [15.0,  2.0, 1.5]   # gate3
+    - [18.0,  2.0, 1.5]   # exit (matches closing_exit_margin_m)
+
+  runs:
+    - controller: mpcc
+      generator: circuit
+      scope: trajectory
+      enabled: true
+      controller_config: configs/controllers/config_mpcc.yaml
+      generator_config: configs/generators/config_circuit.yaml
+
+    # Disabled: trajectory MPC SQP_RTI hits ACADOS_MINSTEP on the first solves
+    # over circuit references — under investigation.
+    - controller: mpc_trajectory
+      generator: circuit
+      scope: trajectory
+      enabled: false
+      controller_config: configs/controllers/config_mpc_trajectory.yaml
+      generator_config: configs/generators/config_circuit.yaml

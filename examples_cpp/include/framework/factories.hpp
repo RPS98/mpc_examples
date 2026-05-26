@@ -28,6 +28,7 @@ struct ControllerKeys {
   static constexpr const char* kPid           = "pid";
   static constexpr const char* kMpcPosition   = "mpc_position";
   static constexpr const char* kMpcTrajectory = "mpc_trajectory";
+  static constexpr const char* kMpcc          = "mpcc";
 };
 
 /** @brief Canonical generator keys accepted by makeGenerator(). */
@@ -37,6 +38,7 @@ struct GeneratorKeys {
   static constexpr const char* kGcopter     = "gcopter";
   static constexpr const char* kDynamic     = "dynamic";
   static constexpr const char* kMavTrajGen  = "mav_traj_gen";
+  static constexpr const char* kCircuit     = "circuit";
 };
 
 /**

@@ -193,7 +193,12 @@ class UnifiedMcapLogger:
         self._impl.add_int32_topic(_TOPIC_EXPERIMENT_ACTIVE)
         self._impl.add_float64_multi_array_topic(_TOPIC_MOTOR_SPEEDS)
         self._impl.add_vector3_topic(_TOPIC_MOTION_REF_POSITION)
-        self._impl.add_twist_stamped_topic(_TOPIC_DESIRED_VELOCITY)
+        # NOTE: the upstream MCAPLogger C++ binding does not expose
+        # `add_twist_stamped_topic` (only the channel-specific
+        # `set_twist_command_topic` / `set_twist_state_topic`). The
+        # `desired_velocity` debug topic is the linear part only — a
+        # Vector3 suffices and round-trips cleanly through mav_flight_review.
+        self._impl.add_vector3_topic(_TOPIC_DESIRED_VELOCITY)
         self._impl.add_string_topic(_TOPIC_META_CONTROLLER)
         self._impl.add_string_topic(_TOPIC_META_GENERATOR)
         self._impl.add_string_topic(_TOPIC_META_RUN_ID)
@@ -305,10 +310,10 @@ class UnifiedMcapLogger:
                 _TOPIC_EXPERIMENT_ACTIVE, t, 1 if row.experiment_active else 0)
 
         if row.publishes_desired_velocity:
-            self._impl.save_twist_stamped(
+            # See add_vector3_topic note above: linear part only.
+            self._impl.save_vector3(
                 _TOPIC_DESIRED_VELOCITY, t,
-                np.asarray(row.desired_velocity, dtype=float),
-                np.zeros(3, dtype=float))
+                np.asarray(row.desired_velocity, dtype=float))
 
         if row.publish_trajectory_horizon and row.trajectory_horizon:
             # Mirror aerostack2's `motion_reference/trajectory`. The

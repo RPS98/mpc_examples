@@ -1,0 +1,19 @@
+# Closed-loop race-circuit generator (key: circuit). Builds an
+# arc-length-reparametrised spline from a per-gate-frame mission +
+# gates_config and emits (position, velocity, acceleration) samples.
+
+# Empty → bundled demo (configs/missions/demo_{circuit,gates}.yaml).
+# Env vars CIRCUIT_MISSION_YAML / CIRCUIT_GATES_YAML override the YAML
+# (used by run_circuit_example.{py,cpp} --mission-yaml/--gates-yaml).
+mission_yaml: ''
+gates_yaml: ''
+
+# Cruise speed [m/s]. Should track mpcc.desired_theta_velocity.
+desired_speed: 2.0
+
+# Spline shaping
+origin_offset_m: 0.0          # 0 → spline starts at the drone's takeoff pose
+closing_exit_margin_m: 3.0    # extend spline past the closing gate [m]
+n_req_points: 20
+target_segment_length: 1.0
+samples_per_segment: 400

@@ -74,6 +74,7 @@ target_compile_features(mpc_examples_controller_mpc_position PUBLIC cxx_std_17)
 
 add_library(mpc_examples_controller_mpc_trajectory STATIC
   src/controllers/mpc_trajectory_controller.cpp
+  src/controllers/mpc_trajectory_controller_factory.cpp
 )
 target_include_directories(mpc_examples_controller_mpc_trajectory PUBLIC ${_inc})
 target_link_libraries(mpc_examples_controller_mpc_trajectory PUBLIC
@@ -85,15 +86,60 @@ target_link_libraries(mpc_examples_controller_mpc_trajectory PUBLIC
 target_compile_features(mpc_examples_controller_mpc_trajectory PUBLIC cxx_std_17)
 
 # ---------------------------------------------------------------------------
-# Generators (all five bundled in a single STATIC; they have no ODR issues).
+# Utilities (shared between the MPCC adapter and the circuit generator).
 # ---------------------------------------------------------------------------
-add_library(mpc_examples_generators STATIC
+add_library(mpc_examples_utils STATIC
+  src/utils/mission_loader.cpp
+)
+target_include_directories(mpc_examples_utils PUBLIC ${_inc})
+# mission_loader.hpp includes <Eigen/Dense>; framework target gets Eigen
+# transitively via mav_simulator, but utils stands alone so we resolve
+# Eigen3 explicitly.
+find_package(Eigen3 REQUIRED)
+target_link_libraries(mpc_examples_utils PUBLIC
+  yaml-cpp
+  Eigen3::Eigen
+)
+target_compile_features(mpc_examples_utils PUBLIC cxx_std_17)
+
+# ---------------------------------------------------------------------------
+# MPCC controller adapter (only when the optional MPCC source is available).
+# Kept STATIC and isolated from the position/trajectory MPC adapters so the
+# acados_mpc::MPC symbol does not ODR-collide across executables.
+# ---------------------------------------------------------------------------
+if(MPC_EXAMPLES_HAVE_MPCC)
+  add_library(mpc_examples_controller_mpcc STATIC
+    src/controllers/mpcc_controller.cpp
+    src/controllers/mpcc_controller_factory.cpp
+  )
+  target_include_directories(mpc_examples_controller_mpcc PUBLIC ${_inc})
+  target_link_libraries(mpc_examples_controller_mpcc PUBLIC
+    mpc_examples_framework
+    mpc_examples_utils
+    mpcc_acados
+    spline_trajectory_generator
+    mav_simulator
+    yaml-cpp
+  )
+  target_compile_features(mpc_examples_controller_mpcc PUBLIC cxx_std_17)
+endif()
+
+# ---------------------------------------------------------------------------
+# Generators (all bundled in a single STATIC; they have no ODR issues).
+# circuit_generator is gated behind MPC_EXAMPLES_HAVE_MPCC because it links
+# against spline_trajectory_generator from the optional MPCC tree.
+# ---------------------------------------------------------------------------
+set(_generator_sources
   src/generators/waypoint_reference_generator.cpp
   src/generators/jerk_limited_generator.cpp
   src/generators/gcopter_generator.cpp
   src/generators/dynamic_trajectory_generator.cpp
   src/generators/mav_traj_gen_generator.cpp
 )
+if(MPC_EXAMPLES_HAVE_MPCC)
+  list(APPEND _generator_sources src/generators/circuit_generator.cpp)
+endif()
+add_library(mpc_examples_generators STATIC ${_generator_sources})
 target_include_directories(mpc_examples_generators PUBLIC ${_inc})
 target_link_libraries(mpc_examples_generators PUBLIC
   mpc_examples_framework
@@ -104,6 +150,12 @@ target_link_libraries(mpc_examples_generators PUBLIC
   mav_simulator
   yaml-cpp
 )
+if(MPC_EXAMPLES_HAVE_MPCC)
+  target_link_libraries(mpc_examples_generators PUBLIC
+    mpc_examples_utils
+    spline_trajectory_generator
+  )
+endif()
 target_compile_features(mpc_examples_generators PUBLIC cxx_std_17)
 
 # ---------------------------------------------------------------------------
@@ -153,6 +205,68 @@ target_link_libraries(trajectory_examples PRIVATE
   yaml-cpp
   Threads::Threads
 )
+
+# Circuit-mission binaries. Two separate executables on purpose:
+#   - circuit_examples      links mpcc adapter + mpcc_acados library.
+#   - circuit_examples_mpc  links mpc_trajectory adapter + acados_mpc lib.
+# Both libraries expose the same `acados_mpc::MPC` /
+# `acados_mpc::configureMpcFromYaml` symbols with different bodies, so
+# linking both into a single binary causes the wrong implementation to
+# be picked. Same ODR-isolation pattern that `factories_position` vs
+# `factories_trajectory` already use for mpc_position vs mpc_trajectory.
+if(MPC_EXAMPLES_HAVE_MPCC)
+  # ── MPCC variant ────────────────────────────────────────────────────
+  add_library(mpc_examples_factories_circuit STATIC
+    src/framework/factories_circuit.cpp
+  )
+  target_include_directories(mpc_examples_factories_circuit PUBLIC ${_inc})
+  target_link_libraries(mpc_examples_factories_circuit PUBLIC
+    mpc_examples_framework
+    mpc_examples_controller_mpcc
+    mpc_examples_generators
+  )
+  target_compile_features(mpc_examples_factories_circuit PUBLIC cxx_std_17)
+
+  add_executable(circuit_examples src/run_circuit_example.cpp)
+  target_link_libraries(circuit_examples PRIVATE
+    mpc_examples_factories_circuit
+    mav_simulator
+    yaml-cpp
+    Threads::Threads
+  )
+  # spline_trajectory_generator's arc_length_reparametrization.hpp defines
+  # its free functions without `inline`, so each TU that includes the
+  # header (circuit_generator, mpcc_controller, factories_circuit) emits
+  # its own copy of the symbols. Without --allow-multiple-definition the
+  # linker fails. All copies come from the same header translation so
+  # picking the first is safe; the issue only ever bites *this* binary
+  # because spline_trajectory_generator headers are confined to the
+  # MPCC scope.
+  target_link_options(circuit_examples PRIVATE
+    "LINKER:--allow-multiple-definition")
+
+  # ── MPC-trajectory variant ──────────────────────────────────────────
+  add_library(mpc_examples_factories_circuit_mpc STATIC
+    src/framework/factories_circuit_mpc.cpp
+  )
+  target_include_directories(mpc_examples_factories_circuit_mpc PUBLIC ${_inc})
+  target_link_libraries(mpc_examples_factories_circuit_mpc PUBLIC
+    mpc_examples_framework
+    mpc_examples_controller_mpc_trajectory
+    mpc_examples_generators
+  )
+  target_compile_features(mpc_examples_factories_circuit_mpc PUBLIC cxx_std_17)
+
+  add_executable(circuit_examples_mpc src/run_circuit_example.cpp)
+  target_link_libraries(circuit_examples_mpc PRIVATE
+    mpc_examples_factories_circuit_mpc
+    mav_simulator
+    yaml-cpp
+    Threads::Threads
+  )
+  target_link_options(circuit_examples_mpc PRIVATE
+    "LINKER:--allow-multiple-definition")
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests (only when the test sources exist to avoid a stale CMakeLists from
