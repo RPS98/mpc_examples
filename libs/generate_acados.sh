@@ -35,11 +35,23 @@ case "$TARGET" in
 esac
 
 PY_ROOT="${REPO_ROOT}/build/python"
-if [[ ! -d "${PY_ROOT}/mpc_acados_position" || ! -d "${PY_ROOT}/mpc_acados_trajectory" ]]; then
-  echo "error: ${PY_ROOT} missing mpc_acados_{position,trajectory}; run ./build.sh first" >&2
-  exit 1
+if [[ -d "${PY_ROOT}/mpc_acados_position" && -d "${PY_ROOT}/mpc_acados_trajectory" ]]; then
+  export PYTHONPATH="${PY_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+else
+  MPC_SRC="${REPO_ROOT}/thirdparty/mpc"
+  for sub in \
+    "mpc_acados_core" \
+    "controllers/position/mpc_acados_position" \
+    "controllers/trajectory/mpc_acados_trajectory"
+  do
+    if [[ ! -d "${MPC_SRC}/${sub}" ]]; then
+      echo "error: missing source ${MPC_SRC}/${sub}; did you run 'git submodule update --init --recursive'?" >&2
+      exit 1
+    fi
+  done
+  # The parent of each package is what goes on PYTHONPATH.
+  export PYTHONPATH="${MPC_SRC}:${MPC_SRC}/controllers/position:${MPC_SRC}/controllers/trajectory${PYTHONPATH:+:${PYTHONPATH}}"
 fi
-export PYTHONPATH="${PY_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 generate_one() {
   local variant="$1"
