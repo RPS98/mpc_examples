@@ -12,8 +12,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -55,6 +57,23 @@ dynamic_traj_generator::DynamicWaypoint::Vector makeSegmentWaypoints(const Eigen
   return result;
 }
 
+/// Mission waypoint list (targets only) for `global` mode. The backend
+/// prepends the current vehicle position internally (updateVehiclePosition),
+/// so the start is NOT included here — mirroring aerostack2's
+/// dynamic_mav_trajectory_generator plugin. Including it would create a
+/// degenerate zero-length first segment that wrecks the global time allocation.
+dynamic_traj_generator::DynamicWaypoint::Vector makeWaypointList(
+    const std::vector<Eigen::Vector3d>& waypoints) {
+  dynamic_traj_generator::DynamicWaypoint::Vector result;
+  result.reserve(waypoints.size());
+  for (const auto& w : waypoints) {
+    dynamic_traj_generator::DynamicWaypoint wp;
+    wp.resetWaypoint(w);
+    result.emplace_back(std::move(wp));
+  }
+  return result;
+}
+
 }  // namespace
 
 DynamicTrajectoryGenerator::DynamicTrajectoryGenerator(const Config& cfg) : cfg_(cfg) {}
@@ -65,7 +84,16 @@ DynamicTrajectoryGenerator::Config DynamicTrajectoryGenerator::loadConfigFromYam
     throw std::invalid_argument("Config file not found at " +
                                 std::filesystem::absolute(path).string() + ".");
   }
-  return Config{};
+  Config cfg;
+  try {
+    const YAML::Node node = YAML::LoadFile(path);
+    if (node && node["mode"]) {
+      cfg.mode = node["mode"].as<std::string>();
+    }
+  } catch (const std::exception&) {
+    // Tolerate a comment-only placeholder: keep the default mode.
+  }
+  return cfg;
 }
 
 void DynamicTrajectoryGenerator::initialize(const mav_model::State& initial_state,
@@ -89,9 +117,47 @@ void DynamicTrajectoryGenerator::initialize(const mav_model::State& initial_stat
   has_plan_          = false;
   segment_completed_ = false;
 
+  // Resolve the planning mode: env override (higher-level launchers select
+  // racing without editing repo YAMLs) wins over the config value, default
+  // point_to_point.
+  std::string mode = cfg_.mode;
+  if (const char* env = std::getenv("DYNAMIC_TRAJECTORY_MODE"); env && *env) {
+    mode = env;
+  }
+  global_   = (mode == "global");
+  eval_dt_  = example_cfg.mpc_dt > 0.0 ? example_cfg.mpc_dt : example_cfg.controller_dt;
+
   // Drop any previous instance so the next onWaypointChanged() starts from a
-  // clean state (matters when the same adapter is reused across runs).
+  // clean state (matters when the same adapter is reused across runs). In
+  // global mode the instance is built once, here, through all waypoints.
   traj_.reset();
+
+  if (global_) {
+    if (example_cfg.waypoints.empty()) {
+      throw std::invalid_argument(
+          "DynamicTrajectoryGenerator(global): example_cfg.waypoints is empty.");
+    }
+    // Mirror aerostack2's dynamic_mav_trajectory_generator plugin: seed the
+    // vehicle position (backend prepends it as the start) and set ONLY the
+    // target waypoints. getMinTime()/getMaxTime() block until the trajectory
+    // is generated, turning the async backend synchronous.
+    const Eigen::Vector3d p0 = initial_state.getPositionVector();
+    traj_ = std::make_unique<dynamic_traj_generator::DynamicTrajectory>();
+    traj_->setSpeed(max_speed_);
+    traj_->updateVehiclePosition(p0);
+    traj_->setWaypoints(makeWaypointList(example_cfg.waypoints));
+    const double t_min_backend = traj_->getMinTime();  // blocks → sync
+    const double t_max_backend = traj_->getMaxTime();
+    // Anchor sim time 0 to the backend's min time: evaluate() maps
+    // t_local = t - t_segment_start_ = t + t_min_backend (the backend axis),
+    // and t_max_ is the sim-time duration so the "t > t_max_" hold still works.
+    t_segment_start_ = -t_min_backend;
+    t_min_           = 0.0;
+    t_max_           = t_max_backend - t_min_backend;
+    has_plan_        = true;
+    target_wp_       = example_cfg.waypoints.back();
+    hold_pos_        = example_cfg.waypoints.back();
+  }
 
   last_sample_.position     = hold_pos_;
   last_sample_.velocity     = Eigen::Vector3d::Zero();
@@ -102,6 +168,9 @@ void DynamicTrajectoryGenerator::initialize(const mav_model::State& initial_stat
 void DynamicTrajectoryGenerator::onWaypointChanged(const Eigen::Vector3d& next_waypoint,
                                                    const mav_model::State& state,
                                                    double t_start) {
+  if (global_) {
+    return;  // The single global trajectory already covers every waypoint.
+  }
   const Eigen::Vector3d p0 = state.getPositionVector();
   target_wp_               = next_waypoint;
   hold_pos_                = next_waypoint;
@@ -141,7 +210,9 @@ void DynamicTrajectoryGenerator::update(double t, const mav_model::State& state)
   has_prev_t_     = true;
 
   if (has_plan_ && !segment_completed_ && t >= t_min_ && t <= t_max_) {
-    const double t_local = std::clamp(t - t_segment_start_, 0.0, t_max_ - t_segment_start_);
+    const double t_local = std::clamp(t - t_segment_start_, 0.0,
+                                      std::max(0.0, t_max_ - t_segment_start_
+                                                        - (global_ ? eval_dt_ : 0.0)));
     dynamic_traj_generator::References refs;
     if (traj_->evaluateTrajectory(static_cast<float>(t_local), refs) && isFiniteRefs(refs)) {
       last_sample_.position     = refs.position;
@@ -194,7 +265,9 @@ framework::ReferenceSample DynamicTrajectoryGenerator::evaluate(double t) const 
   if (t < t_min_) {
     return sample;
   }
-  const double t_local = std::clamp(t - t_segment_start_, 0.0, t_max_ - t_segment_start_);
+  const double t_local = std::clamp(t - t_segment_start_, 0.0,
+                                    std::max(0.0, t_max_ - t_segment_start_
+                                                      - (global_ ? eval_dt_ : 0.0)));
   dynamic_traj_generator::References refs;
   if (traj_->evaluateTrajectory(static_cast<float>(t_local), refs) && isFiniteRefs(refs)) {
     sample.position     = refs.position;

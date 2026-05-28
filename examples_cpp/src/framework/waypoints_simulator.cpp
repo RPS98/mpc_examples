@@ -124,6 +124,20 @@ void WaypointsSimulator::checkCompatibility_() const {
 
 void WaypointsSimulator::run() {
   // --- Simulator setup ------------------------------------------------------
+  // Optional override of the simulator's initial pose. Applied BEFORE
+  // arm() so the HOVER reference (seeded from getState() inside arm)
+  // matches the new start pose. Mirrors `vehicle_initial_pose` used by
+  // the standalone acados examples.
+  if (example_cfg_.has_initial_state) {
+    mav_model::State s = sim_.getModel().getState();
+    s.setPositionVector(Eigen::Vector3d(example_cfg_.initial_position[0],
+                                        example_cfg_.initial_position[1],
+                                        example_cfg_.initial_position[2]));
+    s.setOrientationVector(eulerToQuaternion(example_cfg_.initial_rpy[0],
+                                             example_cfg_.initial_rpy[1],
+                                             example_cfg_.initial_rpy[2]));
+    sim_.getModel().setState(s);
+  }
   sim_.arm();
   sim_.setControlMode(mav_simulator::ControlMode::RATES);
 

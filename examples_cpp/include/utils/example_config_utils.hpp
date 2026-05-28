@@ -175,6 +175,17 @@ struct ExampleConfig {
   DelayMode generator_delay_mode  = DelayMode::kMeasured;
   double generator_delay_fixed_s  = 0.0;
 
+  /// Optional initial pose applied to the simulator before arming. When
+  /// `has_initial_state` is false, the simulator keeps its default state
+  /// (`(0, 0, 0)` with identity orientation). When true, the simulator is
+  /// reset to `initial_position` + RPY-derived orientation. Translates the
+  /// project-level `vehicle_initial_pose` into the framework so the closed
+  /// loop matches the standalone acados examples and the MPCC adapter
+  /// constructs its spline around the actual start pose.
+  bool has_initial_state = false;
+  std::array<double, 3> initial_position {0.0, 0.0, 0.0};
+  std::array<double, 3> initial_rpy      {0.0, 0.0, 0.0};
+
   std::vector<Eigen::Vector3d> waypoints;
   std::vector<RunSpec> runs;
 };
@@ -507,6 +518,19 @@ inline ExampleConfig loadExampleConfig(const std::string& path) {
   }
   config.land_at_end = detail::readBoolOptional(
       sim["land_at_end"], "sim_config.land_at_end", false);
+
+  // Initial pose (optional): overrides the simulator default state when
+  // present. RPY is XYZ-intrinsic, matches tf2 / vehicle_initial_pose.py.
+  const YAML::Node initial_state_node = sim["initial_state"];
+  if (initial_state_node && initial_state_node.IsMap()) {
+    const auto pos = detail::readVector<3>(initial_state_node["position"],
+                                           "sim_config.initial_state.position");
+    const auto rpy = detail::readVector<3>(initial_state_node["rpy"],
+                                           "sim_config.initial_state.rpy");
+    config.has_initial_state = true;
+    config.initial_position  = {pos(0), pos(1), pos(2)};
+    config.initial_rpy       = {rpy(0), rpy(1), rpy(2)};
+  }
   config.path_facing = detail::readBoolRequired(sim["path_facing"], "sim_config.path_facing");
   config.mission_pose_ref_freq = detail::readDoubleOptional(
       sim["mission_pose_ref_freq"], "sim_config.mission_pose_ref_freq", 10.0);

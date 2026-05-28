@@ -1,4 +1,14 @@
 # Dynamic trajectory generator config.
 # The travel speed is taken from configs/simulation/config_example.yaml (sim_config.max_speed).
-# This adapter exposes no additional tunables; the file is kept as a placeholder so every
-# example has a uniform controller+generator YAML pair on the CLI.
+#
+# mode:
+#   point_to_point  (default) — replan a fresh 2-point min-jerk segment on every
+#                   waypoint change. Right for the position / controller-comparison
+#                   experiments (each hop independent).
+#   global          — build a single min-jerk through ALL mission waypoints at
+#                   initialize() and sample it by time (one smooth, continuous
+#                   reference). Use for racing / circuit tracking, where the
+#                   per-segment discontinuities of point_to_point destabilise the
+#                   trajectory MPC. Higher-level launchers may override this via
+#                   the DYNAMIC_TRAJECTORY_MODE env var (env wins over this file).
+mode: point_to_point

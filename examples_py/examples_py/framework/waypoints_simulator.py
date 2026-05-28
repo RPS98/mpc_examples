@@ -173,6 +173,21 @@ class WaypointsSimulator:
 
     def run(self) -> None:
         sim = self._sim
+        # Optional override of the simulator's initial pose. Applied
+        # BEFORE arm() so the HOVER reference (seeded from getState()
+        # inside arm) matches the new start pose. Mirrors the
+        # `vehicle_initial_pose` consumed by the standalone acados
+        # examples.
+        if self._example_cfg.has_initial_state:
+            from mavpy.model import State as _State
+            rpy = self._example_cfg.initial_rpy
+            init_state = _State(
+                position=np.asarray(
+                    self._example_cfg.initial_position, dtype=float),
+                orientation=_euler_to_quaternion(
+                    float(rpy[0]), float(rpy[1]), float(rpy[2])),
+            )
+            sim.set_initial_state(init_state)
         sim.arm()
         sim.set_control_mode(ControlMode.RATES)
 

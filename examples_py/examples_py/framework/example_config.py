@@ -105,6 +105,16 @@ class ExampleConfig:
     generator_delay_mode: DelayMode = DelayMode.MEASURED
     generator_delay_fixed_s: float = 0.0
 
+    # Optional initial pose applied to the simulator before arm(). When
+    # has_initial_state=False the simulator keeps its default state
+    # ((0, 0, 0) identity orientation). RPY is XYZ-intrinsic (tf2 / project
+    # vehicle_initial_pose convention). Mirrors C++ ExampleConfig.
+    has_initial_state: bool = False
+    initial_position: np.ndarray = field(
+        default_factory=lambda: np.zeros(3, dtype=float))
+    initial_rpy: np.ndarray = field(
+        default_factory=lambda: np.zeros(3, dtype=float))
+
     waypoints: List[np.ndarray] = field(default_factory=list)
     runs: List[RunSpec] = field(default_factory=list)
 
@@ -333,6 +343,17 @@ def load_example_config(path: str) -> ExampleConfig:
     cfg.land_at_end = _read_bool_optional(
         sim.get('land_at_end'),
         'sim_config.land_at_end', False)
+
+    # Initial pose (optional): overrides the simulator default state.
+    initial_state = sim.get('initial_state')
+    if isinstance(initial_state, dict):
+        cfg.initial_position = _read_vec3(
+            initial_state.get('position'),
+            'sim_config.initial_state.position')
+        cfg.initial_rpy = _read_vec3(
+            initial_state.get('rpy'),
+            'sim_config.initial_state.rpy')
+        cfg.has_initial_state = True
     cfg.target_modify_threshold_m = _read_double_optional(
         sim.get('target_modify_threshold_m'),
         'sim_config.target_modify_threshold_m', 1.0)

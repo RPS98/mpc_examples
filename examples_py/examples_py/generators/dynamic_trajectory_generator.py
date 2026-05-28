@@ -44,12 +44,21 @@ _MIN_SEGMENT_LENGTH = 1e-6            # [m]
 
 @dataclass
 class DynamicTrajectoryConfig:
-    """Placeholder configuration for :class:`DynamicTrajectoryGenerator`.
+    """Configuration for :class:`DynamicTrajectoryGenerator`.
 
-    The adapter has no tunables: travel speed is sourced from
-    :attr:`ExampleConfig.max_speed` at ``initialize()`` time. The class is
-    kept for symmetry with the C++ interface.
+    Travel speed is sourced from :attr:`ExampleConfig.max_speed` at
+    ``initialize()`` time. The only tunable is the planning ``mode``:
+
+    - ``point_to_point`` (default): replan a fresh 2-point min-jerk segment on
+      every waypoint change. This is the right behaviour for the position /
+      controller-comparison experiments (each hop is independent).
+    - ``global``: build a single min-jerk trajectory through *all* the mission
+      waypoints at ``initialize()`` and sample it by time. This is what racing
+      needs (one smooth, continuous reference the trajectory MPC can track),
+      mirroring how the acados trajectory MPC drives the same generator.
     """
+
+    mode: str = 'point_to_point'
 
 
 def _quat_to_yaw(q: np.ndarray) -> float:
@@ -99,12 +108,27 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
         self._target_wp = np.zeros(3, dtype=float)
         self._last_sample = ReferenceSample()
         self._name = 'DynamicTrajectoryGenerator'
+        # `global` mode: one min-jerk through all mission waypoints, sampled by
+        # time (see DynamicTrajectoryConfig). False → point-to-point (default).
+        self._global = False
+        self._eval_dt = 0.0  # horizon step, used to clamp the final eval time
+
+    _VALID_MODES = ('point_to_point', 'global')
 
     @staticmethod
     def load_config_from_yaml(path: str) -> DynamicTrajectoryConfig:
         if not os.path.isfile(path):
             raise ValueError(f'Config file not found at {os.path.abspath(path)}.')
-        return DynamicTrajectoryConfig()
+        # The file is a comment-only placeholder in the stock repo; parse a
+        # `mode` key if present, otherwise keep the default (point_to_point).
+        import yaml
+        try:
+            data = yaml.safe_load(open(path)) or {}
+        except Exception:  # noqa: BLE001 — tolerate a comment-only placeholder
+            data = {}
+        mode = str(data.get('mode', 'point_to_point')) if isinstance(data, dict) \
+            else 'point_to_point'
+        return DynamicTrajectoryConfig(mode=mode)
 
     def initialize(self, initial_state: State, example_cfg: ExampleConfig) -> None:
         if example_cfg.max_speed <= 0.0:
@@ -119,6 +143,16 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
         self._yaw_ref_hold = _quat_to_yaw(
             np.asarray(initial_state.orientation, dtype=float))
 
+        # Resolve the planning mode: env override (used by higher-level
+        # launchers to select racing without editing the repo YAMLs) wins over
+        # the config value, which defaults to point_to_point.
+        mode = os.environ.get('DYNAMIC_TRAJECTORY_MODE', '') or self._cfg.mode
+        self._global = (str(mode).strip().lower() == 'global')
+        # Horizon step used to clamp the final eval time off the (exclusive)
+        # trajectory end; mirrors the acados trajectory-MPC eval guard.
+        self._eval_dt = float(getattr(example_cfg, 'mpc_dt', 0.0)
+                              or getattr(example_cfg, 'controller_dt', 0.0) or 0.0)
+
         self._hold_pos = np.asarray(initial_state.position, dtype=float).copy()
         self._target_wp = self._hold_pos.copy()
         self._t_segment_start = 0.0
@@ -129,8 +163,12 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
 
         # Drop any previous instance so the next on_waypoint_changed() starts
         # from a clean state (matters when the same adapter is reused across
-        # runs). The instance is rebuilt per segment in on_waypoint_changed().
+        # runs). In point_to_point mode the instance is rebuilt per segment in
+        # on_waypoint_changed(); in global mode it is built once, here.
         self._traj = None
+
+        if self._global:
+            self._initialize_global(initial_state, example_cfg)
 
         self._last_sample = ReferenceSample(
             position=self._hold_pos.copy(),
@@ -139,9 +177,38 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
             yaw=self._yaw_ref_hold,
         )
 
+    def _initialize_global(self, initial_state: State, example_cfg: ExampleConfig) -> None:
+        """Build a single min-jerk trajectory through ALL mission waypoints.
+
+        Sampled by sim time anchored at 0 (t_segment_start). on_waypoint_changed
+        is a no-op afterwards (the trajectory covers the whole mission), and the
+        existing update()/evaluate() time-sampling machinery is reused as-is.
+        """
+        p0 = np.asarray(initial_state.position, dtype=float)
+        wps = [np.asarray(w, dtype=float).copy() for w in example_cfg.waypoints]
+        if not wps:
+            raise ValueError('DynamicTrajectoryGenerator(global): '
+                             'example_cfg.waypoints is empty.')
+        # Generate from the current position through every waypoint at once.
+        self._traj = DynamicTrajectory()
+        self._traj.set_path_facing(False)  # path-facing handled here, rate-limited
+        self._traj.generate_trajectory(
+            p0, float(self._yaw_ref_hold),
+            [p0.copy(), *[w.copy() for w in wps]],
+            float(self._max_speed))
+        self._t_segment_start = 0.0
+        self._t_min = float(self._traj.get_min_time())
+        self._t_max = float(self._traj.get_max_time())
+        self._has_plan = True
+        self._segment_completed = False
+        self._target_wp = wps[-1].copy()
+        self._hold_pos = wps[-1].copy()
+
     def on_waypoint_changed(
         self, next_waypoint: np.ndarray, state: State, t_start: float,
     ) -> None:
+        if self._global:
+            return  # The single global trajectory already covers every waypoint.
         p0 = np.asarray(state.position, dtype=float)
         self._target_wp = np.asarray(next_waypoint, dtype=float).copy()
         self._hold_pos = self._target_wp.copy()
@@ -206,7 +273,8 @@ class DynamicTrajectoryGenerator(ITrajectoryGenerator):
         if (self._has_plan and not self._segment_completed
                 and self._t_min <= t <= self._t_max):
             t_local = min(max(t - self._t_segment_start, 0.0),
-                          self._t_max - self._t_segment_start)
+                          max(0.0, self._t_max - self._t_segment_start
+                              - (self._eval_dt if self._global else 0.0)))
             sample = self._evaluate_sample(t_local)
             if sample is not None:
                 self._last_sample.position = sample.position

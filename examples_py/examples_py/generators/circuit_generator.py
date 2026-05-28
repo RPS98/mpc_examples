@@ -55,16 +55,18 @@ from examples_py.utils import mission_loader as ml
 
 
 def _import_spline_py():
-    """Locate the spline_py module shipped with the mpcc acados example.
+    """Locate the MPCC spline pybind module.
 
-    The module is not installed system-wide; it lives at
-    ``mpcc_acados_example/examples/spline_py/`` inside the ``mpcc`` repo
-    that the user has vendored under ``workspace/thirdparty_libs/`` (or
-    wherever ``MPCC_ACADOS_EXAMPLE_DIR`` points).
+    ``spline_trajectory_generator_py`` is a pybind11 module shipped under
+    ``mpcc_acados_example/build/python/`` of the vendored mpcc thirdparty.
+    Callers are expected to add that directory to ``PYTHONPATH`` (the
+    project launchers do); the ``MPCC_ACADOS_EXAMPLE_DIR`` and
+    ``MPCC_REPO_ROOT`` environment variables are accepted as a fallback
+    search path for ad-hoc developer workflows.
     """
     try:
-        from spline_py.trajectory_generator import TrajectoryGenerator, Setpoint
-        from spline_py.arc_length_reparametrization import evaluate_arc_length_spline
+        from spline_trajectory_generator_py import (  # noqa: F401
+            TrajectoryGenerator, Setpoint, evaluate_arc_length_spline)
         return TrajectoryGenerator, Setpoint, evaluate_arc_length_spline
     except ImportError:
         pass
@@ -77,25 +79,19 @@ def _import_spline_py():
     if repo_root:
         candidates.append(
             Path(repo_root) / 'workspace/thirdparty_libs/mpcc'
-            / 'mpcc_acados_example/examples')
-    # Default vendored path inside the canonical project_mpcc layout.
-    candidates.append(Path(
-        '/home/rafa/mpcc_v2/workspace/thirdparty_libs/mpcc'
-        '/mpcc_acados_example/examples'))
+            / 'mpcc_acados_example/build/python')
 
     for cand in candidates:
-        if (cand / 'spline_py' / 'trajectory_generator.py').is_file():
+        if (cand / 'spline_trajectory_generator_py' / '__init__.py').is_file():
             sys.path.insert(0, str(cand))
-            from spline_py.trajectory_generator import (
-                TrajectoryGenerator, Setpoint)
-            from spline_py.arc_length_reparametrization import (
-                evaluate_arc_length_spline)
+            from spline_trajectory_generator_py import (  # noqa: F401
+                TrajectoryGenerator, Setpoint, evaluate_arc_length_spline)
             return TrajectoryGenerator, Setpoint, evaluate_arc_length_spline
 
     raise ImportError(
-        'CircuitGenerator: cannot locate spline_py. Set MPCC_REPO_ROOT or '
-        'MPCC_ACADOS_EXAMPLE_DIR so the loader can find '
-        'mpcc_acados_example/examples/spline_py/.')
+        'CircuitGenerator: cannot locate spline_trajectory_generator_py. '
+        'Build the mpcc_acados_example pybind (cmake --build build) and '
+        'expose its build/python on PYTHONPATH, or set MPCC_REPO_ROOT.')
 
 
 @dataclass

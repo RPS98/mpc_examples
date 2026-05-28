@@ -36,11 +36,17 @@ namespace mpc_examples::adapters {
  */
 class DynamicTrajectoryGenerator : public framework::ITrajectoryGenerator {
 public:
-  struct Config {};
+  /// mode: "point_to_point" (default, replan per waypoint — position/controller
+  /// comparison experiments) or "global" (one min-jerk through all mission
+  /// waypoints, sampled by time — racing/circuit tracking). See
+  /// configs/generators/config_dynamic.yaml.
+  struct Config {
+    std::string mode = "point_to_point";
+  };
 
   explicit DynamicTrajectoryGenerator(const Config& cfg);
 
-  /// Placeholder for API symmetry: the adapter does not require a YAML file.
+  /// Reads the optional `mode` key; the file is otherwise a placeholder.
   static Config loadConfigFromYaml(const std::string& path);
 
   void initialize(const mav_model::State& initial_state, const ExampleConfig& example_cfg) override;
@@ -74,6 +80,8 @@ private:
   bool has_plan_             = false;
   bool segment_completed_    = false;
   bool path_facing_          = true;
+  bool global_               = false;  // build one trajectory through all waypoints
+  double eval_dt_            = 0.0;    // horizon step; clamps the final eval time
 
   double yaw_ref_hold_ = 0.0;
   double prev_t_       = 0.0;
