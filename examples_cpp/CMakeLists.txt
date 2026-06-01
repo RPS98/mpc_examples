@@ -72,6 +72,18 @@ target_link_libraries(mpc_examples_controller_mpc_position PUBLIC
 )
 target_compile_features(mpc_examples_controller_mpc_position PUBLIC cxx_std_17)
 
+add_library(mpc_examples_controller_ssa_position_mpc STATIC
+  src/controllers/ssa_position_mpc_controller.cpp
+)
+target_include_directories(mpc_examples_controller_ssa_position_mpc PUBLIC ${_inc})
+target_link_libraries(mpc_examples_controller_ssa_position_mpc PUBLIC
+  mpc_examples_framework
+  acados_ssa_position_mpc
+  mav_simulator
+  yaml-cpp
+)
+target_compile_features(mpc_examples_controller_ssa_position_mpc PUBLIC cxx_std_17)
+
 add_library(mpc_examples_controller_mpc_trajectory STATIC
   src/controllers/mpc_trajectory_controller.cpp
 )
@@ -118,6 +130,7 @@ target_link_libraries(mpc_examples_factories_position PUBLIC
   mpc_examples_framework
   mpc_examples_controller_pid
   mpc_examples_controller_mpc_position
+  mpc_examples_controller_ssa_position_mpc
   mpc_examples_generators
 )
 target_compile_features(mpc_examples_factories_position PUBLIC cxx_std_17)

@@ -1,0 +1,40 @@
+controller:
+  solver_definition_path: '../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc/configs/solver_definition.yaml'
+  ocp_json_file_path: '../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc/mpc_generated_code/acados_ocp.json'
+
+mpc:
+  # Safety knob applied as `v_ref = sqrt(constraints.uh[0]) * max_vel_percentage`.
+  # The same value caps the solver's runtime `uh = v_ref²`. The trajectory shape
+  # is governed by the SSA artificial reference; this cap only limits ‖v‖.
+  max_vel_percentage: 0.95
+  parameters:
+    mass: [1.233]   # kg
+    # State weights: position [x, y, z], orientation [roll, pitch, yaw],
+    # velocity [vx, vy, vz].
+    Q:  [5.0, 5.0, 10.0, 0.1, 0.1, 10.0, 1.5, 1.5, 2.0]
+    Qe: [10.0, 10.0, 20.0, 0.1, 0.1, 20.0, 1.5, 1.5, 2.0]
+    # Control-input weights: [thrust, wx, wy, wz].
+    R: [0.8, 10.0, 10.0, 3.0]
+    # Steady-state offset weight ||artificial_position - desired_position||^2.
+    # Applied at every stage so the (pos, p_a) Hessian stays PD. Larger values
+    # pull p_a onto the set-point more tightly.
+    Qr: [10.0, 10.0, 20.0]
+  constraints:
+    lbu: [0.01, -1.0, -1.0, -2.0]   # lower bound on [thrust, wx, wy, wz]
+    ubu: [40.0,  1.0,  1.0,  2.0]   # upper bound on [thrust, wx, wy, wz]
+    lh: [0.0]                       # lower bound on h = ||v||² (inactive at 0)
+    uh: [0.9]                       # upper bound on h = ||v||² (m²/s²)
+    # Slack-variable weights (kept equal to config_mpc.yaml so the comparison
+    # is apples-to-apples; only `Qr` above is SSA-specific). With this weak
+    # linear-only penalty SSA will overshoot the soft ‖v‖² bound on aggressive
+    # setpoint transients — that is the Pareto point we want to *characterize*,
+    # not hide. Stronger slack (Zu quadratic) is a tuning lever for safety,
+    # see plan history.
+    Zl: [0.0]
+    Zu: [0.0]
+    zl: [0.0]
+    zu: [10.0]
+    Zl_e: [0.0]
+    Zu_e: [0.0]
+    zl_e: [0.0]
+    zu_e: [10.0]

@@ -18,6 +18,10 @@ namespace {
 // mav_flight_review/pybind/python/mav_flight_review/data_model.py so the
 // reviewer surfaces timing / mission extras from the same logger.
 constexpr const char* kTopicControllerCompute   = "/drone0/debug/controller/compute_output_time";
+// Pure acados time_tot (seconds). Mirrors `compute_output_time` but only
+// covers the solver call itself (excludes the C++ pre/post overhead of the
+// wrapper). Useful to compare solver cost across controllers.
+constexpr const char* kTopicAcadosSolverTime    = "/drone0/debug/controller/acados_solver_time";
 constexpr const char* kTopicGeneratorUpdate     = "/drone0/debug/behaviors/trajectory_generation/generation_time";
 constexpr const char* kTopicGeneratorEval       = "/drone0/debug/behaviors/trajectory_generation/eval_time";
 constexpr const char* kTopicControllerDelay     = "/drone0/debug/controller/delay_applied";
@@ -72,6 +76,7 @@ UnifiedMcapLogger::UnifiedMcapLogger(const std::string& output_path, const RunMe
 
   // Custom topics must be declared before start().
   impl_->add_float64_topic(kTopicControllerCompute);
+  impl_->add_float64_topic(kTopicAcadosSolverTime);
   impl_->add_float64_topic(kTopicGeneratorUpdate);
   impl_->add_float64_topic(kTopicGeneratorEval);
   impl_->add_float64_topic(kTopicControllerDelay);
@@ -147,6 +152,7 @@ void UnifiedMcapLogger::logRow(const LogRow& row) {
   // before each ``save_float64`` call.
   constexpr double kUsToSec = 1.0e-6;
   impl_->save_float64(kTopicControllerCompute, t, row.controller_compute_time_us * kUsToSec);
+  impl_->save_float64(kTopicAcadosSolverTime, t, row.controller_acados_solver_time_us * kUsToSec);
   impl_->save_float64(kTopicGeneratorUpdate, t, row.generator_update_time_us * kUsToSec);
   impl_->save_float64(kTopicGeneratorEval, t, row.generator_eval_time_us * kUsToSec);
   impl_->save_float64(kTopicControllerDelay, t, row.controller_delay_applied_us * kUsToSec);

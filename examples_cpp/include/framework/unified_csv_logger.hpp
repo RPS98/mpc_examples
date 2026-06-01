@@ -60,6 +60,9 @@ struct LogRow {
 
   // Compute times + delays (microseconds) -------------------------------------
   double controller_compute_time_us            = 0.0;
+  // Pure acados time_tot reported by ocp_nlp_get() right after the solve.
+  // Zero for non-MPC controllers (PID, ...).
+  double controller_acados_solver_time_us      = 0.0;
   double generator_update_time_us              = 0.0;
   double generator_eval_time_us                = 0.0;
   double controller_delay_applied_us           = 0.0;

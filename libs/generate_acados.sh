@@ -26,12 +26,12 @@ cd "${REPO_ROOT}"
 
 TARGET="${1:-both}"
 case "$TARGET" in
-  position|trajectory|both) ;;
+  position|trajectory|ssa_position|both) ;;
   -h|--help)
     grep '^#' "$0" | sed 's/^# \?//' | head -20
     exit 0
     ;;
-  *) echo "error: argument must be position|trajectory|both (got: $TARGET)" >&2; exit 2 ;;
+  *) echo "error: argument must be position|trajectory|ssa_position|both (got: $TARGET)" >&2; exit 2 ;;
 esac
 
 PY_ROOT="${REPO_ROOT}/build/python"
@@ -55,8 +55,14 @@ fi
 
 generate_one() {
   local variant="$1"
-  local yaml="${REPO_ROOT}/libs/acados_${variant}_mpc/configs/solver_definition.yaml"
-  local export_dir="${REPO_ROOT}/libs/acados_${variant}_mpc"
+  local package="$2"
+  local lib_root="${REPO_ROOT}/libs/acados_${variant}_mpc"
+  if [[ "${variant}" == "ssa_position" ]]; then
+    # acados_ssa_position_mpc lives in the external ssa_position_mpc repo.
+    lib_root="${REPO_ROOT}/../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc"
+  fi
+  local yaml="${lib_root}/configs/solver_definition.yaml"
+  local export_dir="${lib_root}"
 
   if [[ ! -f "${yaml}" ]]; then
     echo "error: solver definition not found: ${yaml}" >&2
@@ -69,24 +75,24 @@ generate_one() {
   # Wipe the previous generated code so stale artefacts cannot be picked up.
   rm -rf "${export_dir}/mpc_generated_code"
 
-  # Resolve mpc_acados_<variant> once and surface which copy we will use
-  # (the user has a separate pip-installed copy that could otherwise win).
+  # Resolve the python package once and surface which copy we will use
+  # (the user may have a pip-installed copy that could otherwise win).
   local resolved
-  resolved="$(python3 - "$variant" <<'PY'
+  resolved="$(python3 - "$package" <<'PY'
 import importlib
 import os
 import sys
 
-variant = sys.argv[1]
-module = importlib.import_module(f'mpc_acados_{variant}')
+package = sys.argv[1]
+module = importlib.import_module(package)
 print(os.path.realpath(module.__file__))
 PY
   )"
-  echo "[generate ${variant}] mpc_acados_${variant} -> ${resolved}"
+  echo "[generate ${variant}] ${package} -> ${resolved}"
 
   python3 - "$yaml" <<PY
 import sys
-from mpc_acados_${variant} import AcadosMPCSolver
+from ${package} import AcadosMPCSolver
 
 AcadosMPCSolver(
     solver_definition_path=sys.argv[1],
@@ -98,9 +104,12 @@ PY
 }
 
 case "$TARGET" in
-  position)   generate_one position ;;
-  trajectory) generate_one trajectory ;;
-  both)       generate_one position; generate_one trajectory ;;
+  position)     generate_one position     mpc_acados_position ;;
+  trajectory)   generate_one trajectory   mpc_acados_trajectory ;;
+  ssa_position) generate_one ssa_position ssa_position_mpc_acados ;;
+  both)         generate_one position     mpc_acados_position
+                generate_one trajectory   mpc_acados_trajectory
+                generate_one ssa_position ssa_position_mpc_acados ;;
 esac
 
 echo "Done. Regenerated acados artefacts under libs/acados_*_mpc/mpc_generated_code/."

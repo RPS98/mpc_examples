@@ -76,8 +76,10 @@ double resolveDelay(const DelayMode mode, const double measured_s, const double 
 
 struct TimedCommand {
   ControlCommand cmd;
-  double compute_time_us  = 0.0;
-  double delay_applied_us = 0.0;
+  double compute_time_us       = 0.0;
+  /// Pure acados solver time (μs). Zero for non-MPC controllers.
+  double acados_solver_time_us = 0.0;
+  double delay_applied_us      = 0.0;
 };
 
 struct TimedReference {
@@ -433,8 +435,9 @@ void WaypointsSimulator::run() {
   // --- Main loop ------------------------------------------------------------
   ControlCommand current_cmd    = ControlCommand{};
   ReferenceSample current_ref   = refs.front();
-  double current_cmd_compute_us = 0.0;
-  double current_cmd_delay_us   = 0.0;
+  double current_cmd_compute_us       = 0.0;
+  double current_cmd_acados_solver_us = 0.0;
+  double current_cmd_delay_us         = 0.0;
   double current_ref_update_us  = 0.0;
   double current_ref_eval_us    = 0.0;
   double current_ref_delay_us   = 0.0;
@@ -602,9 +605,10 @@ void WaypointsSimulator::run() {
     ref_buffer.push(ref_payload, t + gen_delay_s);
 
     TimedCommand cmd_payload;
-    cmd_payload.cmd              = cmd;
-    cmd_payload.compute_time_us  = ctrl_solve_s * 1e6;
-    cmd_payload.delay_applied_us = ctrl_delay_s * 1e6;
+    cmd_payload.cmd                   = cmd;
+    cmd_payload.compute_time_us       = ctrl_solve_s * 1e6;
+    cmd_payload.acados_solver_time_us = controller_->lastAcadosSolverTimeMicros();
+    cmd_payload.delay_applied_us      = ctrl_delay_s * 1e6;
     cmd_buffer.push(cmd_payload, t + gen_delay_s + ctrl_delay_s);
 
     // --- Hover detection ---------------------------------------------------
@@ -646,9 +650,10 @@ void WaypointsSimulator::run() {
 
       // Query buffers for the latest sample visible at t_sub.
       if (auto new_cmd = cmd_buffer.latestAvailable(t_sub)) {
-        current_cmd            = new_cmd->cmd;
-        current_cmd_compute_us = new_cmd->compute_time_us;
-        current_cmd_delay_us   = new_cmd->delay_applied_us;
+        current_cmd                  = new_cmd->cmd;
+        current_cmd_compute_us       = new_cmd->compute_time_us;
+        current_cmd_acados_solver_us = new_cmd->acados_solver_time_us;
+        current_cmd_delay_us         = new_cmd->delay_applied_us;
       }
       if (auto new_ref = ref_buffer.latestAvailable(t_sub)) {
         current_ref           = new_ref->sample;
@@ -698,7 +703,8 @@ void WaypointsSimulator::run() {
         row.thrust_n                   = current_cmd.thrust_n;
         row.command_angular_velocity   = current_cmd.angular_rate;
         row.motor_w                    = s.getMotorAngularVelocityVector();
-        row.controller_compute_time_us = current_cmd_compute_us;
+        row.controller_compute_time_us       = current_cmd_compute_us;
+        row.controller_acados_solver_time_us = current_cmd_acados_solver_us;
         row.generator_update_time_us   = current_ref_update_us;
         row.generator_eval_time_us     = current_ref_eval_us;
         row.controller_delay_applied_us = current_cmd_delay_us;

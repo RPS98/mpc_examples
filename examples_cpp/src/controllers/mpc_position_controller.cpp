@@ -142,6 +142,13 @@ framework::ControlCommand MpcPositionController::computeCommand(
   const auto t1    = std::chrono::high_resolution_clock::now();
   last_solve_us_   = std::chrono::duration<double>(t1 - t0).count() * 1e6;
 
+  {
+    const auto* p = mpc_->getAcadosSolverPointers();
+    double time_tot = 0.0;
+    ocp_nlp_get(p->nlp_solver, "time_tot", &time_tot);
+    last_acados_solver_us_ = time_tot * 1e6;
+  }
+
   if (status != 0) {
     throw std::runtime_error("MpcPositionController: solver returned status " +
                              std::to_string(status));

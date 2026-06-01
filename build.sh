@@ -18,7 +18,8 @@ cd "$SCRIPT_DIR"
 # libraries still triggers regeneration.
 ACADOS_POS_SO="libs/acados_position_mpc/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_position.so"
 ACADOS_TRAJ_SO="libs/acados_trajectory_mpc/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_trajectory.so"
-if [ ! -f "${ACADOS_POS_SO}" ] || [ ! -f "${ACADOS_TRAJ_SO}" ]; then
+ACADOS_SSA_SO="../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_ssa_position.so"
+if [ ! -f "${ACADOS_POS_SO}" ] || [ ! -f "${ACADOS_TRAJ_SO}" ] || [ ! -f "${ACADOS_SSA_SO}" ]; then
   echo "Generating acados C code..."
   bash libs/generate_acados.sh
 else

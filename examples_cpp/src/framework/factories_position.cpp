@@ -5,11 +5,12 @@
  * @file factories_position.cpp
  *
  * Factory translation unit linked only into the ``position_examples``
- * executable. Dispatches PID and MPC-Position controllers plus all four
- * trajectory generators. Intentionally does NOT reference the
+ * executable. Dispatches PID, MPC-Position and SSA-Position-MPC controllers
+ * plus all four trajectory generators. Intentionally does NOT reference the
  * ``MpcTrajectoryController`` so ``acados_trajectory_mpc`` is kept out of
- * this binary (both acados libs expose the same ``acados_mpc::MPC`` symbol
- * and would violate ODR if linked together).
+ * this binary (its ``acados_mpc::MPC`` would ODR-collide with the position
+ * lib). The SSA library lives in namespace ``acados_ssa_mpc``, so it can
+ * be linked alongside ``acados_position_mpc`` without ODR conflict.
  */
 
 #include "framework/factories.hpp"
@@ -18,6 +19,7 @@
 
 #include "controllers/mpc_position_controller.hpp"
 #include "controllers/pid_position_geometric_controller.hpp"
+#include "controllers/ssa_position_mpc_controller.hpp"
 #include "generators/dynamic_trajectory_generator.hpp"
 #include "generators/gcopter_generator.hpp"
 #include "generators/jerk_limited_generator.hpp"
@@ -28,8 +30,10 @@ namespace mpc_examples::framework {
 std::string defaultControllerConfigPath(const std::string& name) {
   if (name == ControllerKeys::kPid) return "configs/controllers/config_pid.yaml";
   if (name == ControllerKeys::kMpcPosition) return "configs/controllers/config_mpc.yaml";
+  if (name == ControllerKeys::kSsaPositionMpc)
+    return "configs/controllers/config_ssa_position_mpc.yaml";
   throw std::invalid_argument("factories_position: unsupported controller '" + name +
-                              "' (position_examples only links pid and mpc_position).");
+                              "' (position_examples only links pid, mpc_position and ssa_position_mpc).");
 }
 
 std::string defaultGeneratorConfigPath(const std::string& name) {
@@ -52,6 +56,10 @@ std::unique_ptr<IController> makeController(const std::string& name,
   if (name == ControllerKeys::kMpcPosition) {
     auto cfg = adapters::MpcPositionController::loadConfigFromYaml(path);
     return std::make_unique<adapters::MpcPositionController>(cfg);
+  }
+  if (name == ControllerKeys::kSsaPositionMpc) {
+    auto cfg = adapters::SsaPositionMpcController::loadConfigFromYaml(path);
+    return std::make_unique<adapters::SsaPositionMpcController>(cfg);
   }
   throw std::invalid_argument("factories_position: unsupported controller '" + name + "'.");
 }

@@ -22,6 +22,7 @@ from .trajectory_generator_base import ITrajectoryGenerator
 class ControllerKeys:
     PID = 'pid'
     MPC_POSITION = 'mpc_position'
+    SSA_POSITION_MPC = 'ssa_position_mpc'
     MPC_TRAJECTORY = 'mpc_trajectory'
 
 
@@ -38,6 +39,8 @@ def default_controller_config_path(name: str) -> str:
         return 'configs/controllers/config_pid.yaml'
     if name == ControllerKeys.MPC_POSITION:
         return 'configs/controllers/config_mpc.yaml'
+    if name == ControllerKeys.SSA_POSITION_MPC:
+        return 'configs/controllers/config_ssa_position_mpc.yaml'
     if name == ControllerKeys.MPC_TRAJECTORY:
         return 'configs/controllers/config_mpc_trajectory.yaml'
     raise ValueError(f"Unknown controller name: '{name}'.")
@@ -67,6 +70,9 @@ def make_controller(name: str, config_path: str = '', is_trajectory_scope: bool 
     from examples_py.controllers.mpc_position_controller import (
         MpcPositionController,
     )
+    from examples_py.controllers.ssa_position_mpc_controller import (
+        SsaPositionMpcController,
+    )
     from examples_py.controllers.mpc_trajectory_controller import (
         MpcTrajectoryController,
     )
@@ -82,6 +88,9 @@ def make_controller(name: str, config_path: str = '', is_trajectory_scope: bool 
     if name == ControllerKeys.MPC_POSITION:
         cfg = MpcPositionController.load_config_from_yaml(path)
         return MpcPositionController(cfg)
+    if name == ControllerKeys.SSA_POSITION_MPC:
+        cfg = SsaPositionMpcController.load_config_from_yaml(path)
+        return SsaPositionMpcController(cfg)
     if name == ControllerKeys.MPC_TRAJECTORY:
         cfg = MpcTrajectoryController.load_config_from_yaml(path)
         return MpcTrajectoryController(cfg)

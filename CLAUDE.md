@@ -6,7 +6,7 @@ código y en los README por carpeta.
 
 ## Propósito
 
-Showcase unificado de **3 controladores outer-loop × 5 generadores de
+Showcase unificado de **4 controladores outer-loop × 5 generadores de
 referencia**, ejecutados sobre `mav_simulator` (quadrotor con INDI + modelo
 de cuerpo rígido). Las combinaciones se lanzan desde **dos entry-points C++
 (`position_examples`, `trajectory_examples`) y sus espejos Python
@@ -17,8 +17,9 @@ servido por `mav_flight_review`, con topics para ground-truth, referencias,
 comandos, IMU, motores y metadatos del run.
 
 El objetivo es doble:
-1. Comparar PID geométrico vs MPC (posición) vs MPC (trayectoria) sobre el
-   mismo vehículo simulado y los mismos generadores.
+1. Comparar PID geométrico vs MPC (posición) vs SSA-MPC (posición con
+   steady-state aumentado) vs MPC (trayectoria) sobre el mismo vehículo
+   simulado y los mismos generadores.
 2. Dar una interfaz base limpia para enchufar nuevos controladores o
    generadores sin tocar la infraestructura.
 
@@ -27,8 +28,12 @@ El objetivo es doble:
 - **C++17**, CMake ≥ 3.16, yaml-cpp, Eigen.
 - **Python 3** (ROS 2 Humble target) con bindings pybind11 publicados bajo
   `build/python/`.
-- **acados** para los dos MPCs (código autogenerado en
-  `libs/acados_{position,trajectory}_mpc/`).
+- **acados** para los tres MPCs. `position` y `trajectory` viven en
+  `libs/acados_{position,trajectory}_mpc/`. `ssa_position` se consume
+  in-place desde el repo externo `RPS98/ssa_position_mpc` (vendoreado en
+  `../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc/`) — su
+  CMakeLists se monta con `add_subdirectory` out-of-tree desde
+  `libs/CMakeLists.txt`.
 - **mav_simulator** para la dinámica (500 Hz INDI + 1000 Hz modelo físico).
 - **mav_flight_review** para logging MCAP/CSV + dashboard de métricas.
 
@@ -42,7 +47,7 @@ examples_cpp/
 │   │                               # DelayBuffer, factories, parallel_runner,
 │   │                               # unified_mcap_logger.
 │   ├── controllers/                # pid_position_geometric, pid_trajectory_geometric,
-│   │                               # mpc_position, mpc_trajectory
+│   │                               # mpc_position, ssa_position_mpc, mpc_trajectory
 │   ├── generators/                 # waypoint_reference, jerk_limited, gcopter,
 │   │                               # dynamic_trajectory_generator, mav_traj_gen
 │   └── utils/                      # example_config_utils, utils
@@ -52,7 +57,7 @@ examples_cpp/
 examples_py/
 ├── examples_py/                    # mirror puro Python de examples_cpp
 │   ├── framework/                  # IController, ITrajectoryGenerator, ...
-│   ├── controllers/                # 3 controllers
+│   ├── controllers/                # 4 controllers
 │   ├── generators/                 # 5 generators
 │   └── runs/                       # run_position_examples.py + run_trajectory_examples.py
 └── tests/                          # pytest suites paralelas a examples_cpp/tests
@@ -60,11 +65,15 @@ examples_py/
 configs/
 ├── controllers/                    # config_pid.yaml (position scope),
 │                                   # config_pid_trajectory.yaml,
-│                                   # config_mpc.yaml, config_mpc_trajectory.yaml
+│                                   # config_mpc.yaml, config_mpc_trajectory.yaml,
+│                                   # config_ssa_position_mpc.yaml
 ├── generators/                     # config_{waypoints,jerk_limited,gcopter,dynamic,mav_traj_gen}.yaml
 └── simulation/                     # config_example.yaml + config_simulator.yaml
 
-libs/                               # acados-generated solvers (acados_{position,trajectory}_mpc)
+libs/                               # acados-generated solvers
+                                    # acados_{position,trajectory}_mpc/ are in-tree;
+                                    # acados_ssa_position_mpc is added via add_subdirectory
+                                    # from ../thirdparty_libs/ssa_position_mpc/.
 scripts/
 ├── run_all.sh                      # Lanza el unificado C++/Python + métricas + dashboard
 ├── single/                         # Un script por (controller × generator) habilitado
@@ -84,6 +93,13 @@ Siete submódulos. Mantener la lista en sync con `.gitmodules`.
 
 - `mav_simulator` — simulador (rigid-body + INDI), bindings `mavpy.*`.
 - `mpc` — controllers MPC posición y trayectoria (acados).
+- `ssa_position_mpc` — controller MPC posición con steady-state aumentado
+  (acados, formulación "MPC for tracking"). No es submódulo de
+  `mav_examples`; el repo `RPS98/ssa_position_mpc` se vendora en el
+  workspace padre bajo `../thirdparty_libs/ssa_position_mpc/` y este
+  proyecto lo consume in-place (módulo Python `ssa_position_mpc_acados`
+  vía `PYTHONPATH` en `libs/generate_acados.sh`; lib C++
+  `acados_ssa_position_mpc` vía `add_subdirectory` en `libs/CMakeLists.txt`).
 - `dynamic_trajectory_generator` — polynomial dynamic trajectory (replan async).
 - `gcopter_lib` — GCOPTER + safe-flight corridor optimiser.
 - `trajectory_generator_jerk_limited` — S-curve jerk-limited generator.
@@ -122,19 +138,24 @@ Documentadas en detalle en los headers. Resumen:
   `generator_delay_fixed_s`, `output_format`, `parallel`, `silent`,
   `benchmark`, `waypoints[]`, `runs[]`.
 - **`ControllerKeys` / `GeneratorKeys`**:
-  `pid | mpc_position | mpc_trajectory` × `waypoints | jerk_limited |
-  gcopter | dynamic | mav_traj_gen`. La clave `pid` se despacha en la
-  factory según el scope: `position_examples` → `PidPositionGeometricController`
-  (cascada pos→vel→acc, sólo consume `kPosition`); `trajectory_examples` →
-  `PidTrajectoryGeometricController` (paralelo pos+vel→acc con feedforward de
-  aceleración via `pid_controllers::TrajectoryController`, consume
-  `kPosition | kVelocity | kAcceleration`). Cada uno tiene su YAML
-  (`config_pid.yaml` vs `config_pid_trajectory.yaml`) con sólo los
-  parámetros que de verdad usa.
+  `pid | mpc_position | ssa_position_mpc | mpc_trajectory` × `waypoints |
+  jerk_limited | gcopter | dynamic | mav_traj_gen`. La clave `pid` se
+  despacha en la factory según el scope: `position_examples` →
+  `PidPositionGeometricController` (cascada pos→vel→acc, sólo consume
+  `kPosition`); `trajectory_examples` → `PidTrajectoryGeometricController`
+  (paralelo pos+vel→acc con feedforward de aceleración via
+  `pid_controllers::TrajectoryController`, consume `kPosition | kVelocity
+  | kAcceleration`). Cada uno tiene su YAML (`config_pid.yaml` vs
+  `config_pid_trajectory.yaml`) con sólo los parámetros que de verdad
+  usa. `mpc_position` y `ssa_position_mpc` son ambos `kPosition`-only y
+  comparten el mismo set de waypoints; coexisten en el mismo binario
+  gracias a que el SSA solver vive en namespace `acados_ssa_mpc` (evita
+  colisión ODR con `acados_mpc::MPC` del position MPC baseline).
 - **Scope por binario**: `position_examples` recoge runs cuyo generador es
-  `waypoints`; `trajectory_examples` recoge `gcopter | jerk_limited |
-  dynamic | mav_traj_gen`. Cualquier run habilitado fuera del scope se
-  salta con un log-info.
+  `waypoints` (controllers `pid | mpc_position | ssa_position_mpc`);
+  `trajectory_examples` recoge `gcopter | jerk_limited | dynamic |
+  mav_traj_gen` (controllers `pid | mpc_trajectory`). Cualquier run
+  habilitado fuera del scope se salta con un log-info.
 - **`runs[]` con configs explícitos**: cada entrada declara los cuatro
   campos (`controller`, `generator`, `enabled`, `controller_config`,
   `generator_config`) en block style. Las factorías siguen teniendo
@@ -175,8 +196,9 @@ Documentadas en detalle en los headers. Resumen:
   cuaterniones `[w, x, y, z]`, tiempos en segundos.
 - **acados codegen**: `bash libs/generate_acados.sh` (lo invoca `build.sh`
   automáticamente cuando faltan los `.so`). Los directorios
-  `libs/acados_{position,trajectory}_mpc/mpc_generated_code/` son output,
-  no editar a mano.
+  `libs/acados_{position,trajectory}_mpc/mpc_generated_code/` y
+  `../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc/mpc_generated_code/`
+  son output, no editar a mano.
 
 ## Workflows habituales
 
@@ -189,7 +211,7 @@ bash build.sh         # acados codegen (si hace falta) + cmake build → build/
 ./build/examples_cpp/position_examples \
   -c configs/simulation/config_example.yaml \
   -s configs/simulation/config_simulator.yaml
-# Produce simulator_logs/<run_id>/cpp/{pid,mpc_position}_waypoints.mcap
+# Produce simulator_logs/<run_id>/cpp/{pid,mpc_position,ssa_position_mpc}_waypoints.mcap
 
 # Comparativa completa (todos los runs habilitados, C++ + Python)
 ./scripts/run_all.sh --lang=both
@@ -312,11 +334,13 @@ ctest --test-dir build --output-on-failure -L pytest    # solo pytest
   librería stitch-ea sobre la trayectoria anterior, dejando la
   referencia clampada al final del segmento previo (v=0) en cuanto
   llega el segundo waypoint.
-- **Singles ahora son 20**: 5 generadores × 2 controladores válidos para
-  cada scope, en C++ y Python. Cada single ejecuta el binario, llama a
-  `compute_metrics`, imprime el `print_summary` por terminal y lanza el
-  plotter de `mav_flight_review` (todo desde `scripts/_lib/env.sh ::
-  post_run_review`).
+- **Singles**: un script por cada (controller × generator) válido en
+  C++ y Python (incluye los del scope `position` con `mpc_position` y
+  `ssa_position_mpc`, los del scope `trajectory` con `mpc_trajectory` y
+  `pid`, y las variantes `*_moving_path_*` del experimento continuo).
+  Cada single ejecuta el binario, llama a `compute_metrics`, imprime el
+  `print_summary` por terminal y lanza el plotter de `mav_flight_review`
+  (todo desde `scripts/_lib/env.sh :: post_run_review`).
 - **Python `run_with_filter`** devuelve siempre `0` (igual que el binario
   C++). Los fallos por caso se reflejan en la tabla de resumen pero no
   abortan al wrapper bajo `set -euo pipefail`.

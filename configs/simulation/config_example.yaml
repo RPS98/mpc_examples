@@ -1,66 +1,46 @@
 sim_config:
   # --- Simulation timing ------------------------------------------------------
-  sim_time: 160.0             # s — hard cap. Run ends at min(mission_end + hover_time, sim_time).
-  model_dt: 0.001             # s — physics integration step (1 kHz).
-  controller_dt: 0.01         # s — INDI + IMU loop (100 Hz).
-  mpc_dt: 0.01                # s — MPC outer loop.
-  pid_dt: 0.01                # s — PID outer loop.
+  sim_time: 160.0             # s, hard cap: run ends at min(mission_end + hover_time, sim_time)
+  model_dt: 0.001             # s, physics integration step (1 kHz)
+  controller_dt: 0.01         # s, INDI + IMU loop (100 Hz)
+  mpc_dt: 0.01                # s, MPC outer loop
+  pid_dt: 0.01                # s, PID outer loop
 
   # --- Mission parameters -----------------------------------------------------
-  max_speed: 1.0              # m/s — used by generators and scheduler.
-  hover_time: 10.0            # s — hover after the last waypoint.
-  settle_margin_s: 5.0        # s — extra time added to every waypoint hop.
-  scheduler_speed_factor: 0.55 # ∈ (0, 1] — effective-speed factor used by
-                               # WaypointScheduler (smooth generators never
-                               # sustain max_speed during the whole hop).
-  path_facing: false           # false → keep_yaw; true → yaw follows path tangent.
+  max_speed: 1.0              # m/s, single source of truth for generators + scheduler
+  hover_time: 10.0            # s, hover after the last waypoint
+  settle_margin_s: 5.0        # s, extra time added to every waypoint hop
+  scheduler_speed_factor: 0.55  # effective-speed factor used by WaypointScheduler, in (0, 1]
+  path_facing: false          # false: keep_yaw; true: yaw follows path tangent
 
   # --- Logging / runtime ------------------------------------------------------
-  output_format: mcap          # "mcap" (default) or "csv".
-  benchmark: false             # true disables CSV logging for pure timing runs.
-  silent: true                 # true suppresses the progress bar.
-  parallel: true               # one worker per enabled case. Pair with
-                               # *_delay_mode=fixed for reproducible timing.
+  output_format: mcap         # "mcap" (default) or "csv"
+  benchmark: false            # true disables CSV logging for pure timing runs
+  silent: true                # true suppresses the progress bar
+  parallel: true              # one worker per enabled case; pair with *_delay_mode=fixed for reproducibility
 
   # --- Compute-delay model ----------------------------------------------------
-  # *_delay_mode = "measured" uses the wall-clock time of the call as delay
-  # applied to its output before the simulator consumes it; "fixed" uses
-  # *_delay_fixed_s instead.
-  controller_delay_mode: measured
-  controller_delay_fixed_s: 0.0
-  generator_delay_mode: measured
-  generator_delay_fixed_s: 0.0
+  controller_delay_mode: measured       # "measured" (wall-clock) or "fixed"
+  controller_delay_fixed_s: 0.0         # delay applied to controller output when mode=fixed
+  generator_delay_mode: measured        # "measured" (wall-clock) or "fixed"
+  generator_delay_fixed_s: 0.0          # delay applied to generator output when mode=fixed
 
-  # --- Waypoints (world frame, m) ---------------------------------------------
-  # Initial state of the simulator is (0, 0, 0); the first waypoint acts as
-  # takeoff. 10-waypoint mission covering all 3 axes in close (1 m) and far
-  # (5-13.7 m) variants, plus 3-axis combined diagonals.
+  # --- Waypoints (world frame, m; initial state is origin, first entry is takeoff) ---
   waypoints:
-    # Takeoff: Z far, single-axis (10 m)
-    - [00.0, 00.0, 10.0]
-    # Close single-axis hops (1 m each)
+    - [00.0, 00.0, 10.0]    # takeoff, +Z far (single-axis)
     - [01.0, 00.0, 10.0]    # +X close
     - [01.0, 01.0, 10.0]    # +Y close
     - [01.0, 01.0, 11.0]    # +Z close
-    # Far single-axis hops (5 m each)
     - [06.0, 01.0, 11.0]    # +X far
     - [06.0, 06.0, 11.0]    # +Y far
     - [06.0, 06.0, 06.0]    # -Z far (descent)
-    # Close 3-axis combined diagonal (~1.73 m)
-    - [07.0, 07.0, 07.0]
-    # Far 3-axis combined diagonal (~13.67 m, sign reversed in X and Y)
-    - [-2.0, -2.0, 12.0]
-    # Medium 3-axis combined return to home (~3.46 m)
-    - [00.0, 00.0, 10.0]
+    - [07.0, 07.0, 07.0]    # close 3-axis diagonal (~1.73 m)
+    - [-2.0, -2.0, 12.0]    # far 3-axis diagonal (~13.67 m, sign reversal)
+    - [00.0, 00.0, 10.0]    # 3-axis return to home (~3.46 m)
 
-  # --- Batch of controller × generator cases ----------------------------------
-  # Single list consumed by two executables:
-  #   - position_examples    picks entries whose generator is `waypoints`.
-  #   - trajectory_examples  picks `gcopter | jerk_limited | dynamic | mav_traj_gen`.
-  # `enabled: true|false` gates inclusion in batch runs; single scripts pass
-  # both --only-controller and --only-generator and execute regardless.
+  # --- Batch of controller x generator cases (see CLAUDE.md for the matrix) ---
   runs:
-    # --- consumed by position_examples ---
+    # --- position scope (position_examples) ---
     - controller: pid
       generator: waypoints
       enabled: true
@@ -73,7 +53,13 @@ sim_config:
       controller_config: configs/controllers/config_mpc.yaml
       generator_config: configs/generators/config_waypoints.yaml
 
-    # --- consumed by trajectory_examples ---
+    - controller: ssa_position_mpc
+      generator: waypoints
+      enabled: true
+      controller_config: configs/controllers/config_ssa_position_mpc.yaml
+      generator_config: configs/generators/config_waypoints.yaml
+
+    # --- trajectory scope (trajectory_examples) ---
     - controller: pid
       generator: gcopter
       enabled: true

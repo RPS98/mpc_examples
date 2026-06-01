@@ -9,3 +9,21 @@
 
 add_subdirectory(acados_position_mpc)
 add_subdirectory(acados_trajectory_mpc)
+
+# acados_ssa_position_mpc lives in the external repo RPS98/ssa_position_mpc
+# (vendored at workspace/thirdparty_libs/ssa_position_mpc/), alongside the
+# Python package that generates its acados artefacts. Adding it as an
+# out-of-tree CMake subdirectory keeps the target name
+# `acados_ssa_position_mpc` while the source is consumed in-place.
+set(ACADOS_SSA_POSITION_MPC_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc"
+  CACHE PATH "Path to the acados_ssa_position_mpc CMake project")
+if(NOT EXISTS "${ACADOS_SSA_POSITION_MPC_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR
+    "acados_ssa_position_mpc not found at ${ACADOS_SSA_POSITION_MPC_DIR}. "
+    "It used to live under mav_examples/libs/ and was moved into the "
+    "ssa_position_mpc repo at workspace/thirdparty_libs/ssa_position_mpc/. "
+    "Run `vcs import < workspace/.repos` to fetch it, or override "
+    "ACADOS_SSA_POSITION_MPC_DIR.")
+endif()
+add_subdirectory("${ACADOS_SSA_POSITION_MPC_DIR}" acados_ssa_position_mpc)

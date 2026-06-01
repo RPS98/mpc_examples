@@ -81,6 +81,7 @@ public:
 
   const std::string& name() const override { return name_; }
   double lastSolveTimeMicros() const override { return last_solve_us_; }
+  double lastAcadosSolverTimeMicros() const override { return last_acados_solver_us_; }
 
   /// Stage-1 predicted linear velocity in world frame (the solver's
   /// immediate prediction after applying the first control input).
@@ -95,7 +96,8 @@ private:
   double v_ref_          = 1.0;
   double dt_horizon_     = 0.05;
   int horizon_steps_     = 0;
-  double last_solve_us_  = 0.0;
+  double last_solve_us_         = 0.0;
+  double last_acados_solver_us_ = 0.0;
   Eigen::Vector3d last_desired_velocity_ = Eigen::Vector3d::Zero();
   std::string name_      = "MpcPositionController";
 };

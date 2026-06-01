@@ -25,9 +25,10 @@ namespace mpc_examples::framework {
 
 /** @brief Canonical controller keys accepted by makeController(). */
 struct ControllerKeys {
-  static constexpr const char* kPid           = "pid";
-  static constexpr const char* kMpcPosition   = "mpc_position";
-  static constexpr const char* kMpcTrajectory = "mpc_trajectory";
+  static constexpr const char* kPid             = "pid";
+  static constexpr const char* kMpcPosition     = "mpc_position";
+  static constexpr const char* kSsaPositionMpc  = "ssa_position_mpc";
+  static constexpr const char* kMpcTrajectory   = "mpc_trajectory";
 };
 
 /** @brief Canonical generator keys accepted by makeGenerator(). */

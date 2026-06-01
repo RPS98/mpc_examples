@@ -114,6 +114,15 @@ public:
   virtual double lastSolveTimeMicros() const = 0;
 
   /**
+   * @return Pure acados solver time of the last solve [microseconds].
+   *
+   * Reported via `ocp_nlp_get(..., "time_tot", ...)` immediately after the
+   * acados solve call. Excludes the C++ pre/post-processing in the wrapper.
+   * Default 0 for non-MPC controllers (PID, etc.).
+   */
+  virtual double lastAcadosSolverTimeMicros() const { return 0.0; }
+
+  /**
    * @return Saturated linear velocity the controller is actively tracking
    *         (post-saturation). Position-PID returns its first stage output;
    *         MPC returns the stage-1 predicted velocity. Default: zero.
