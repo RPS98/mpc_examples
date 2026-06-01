@@ -12,8 +12,8 @@
 	branch = main
 [submodule "thirdparty/dynamic_trajectory_generator"]
 	path = thirdparty/dynamic_trajectory_generator
-	url = https://github.com/miferco97/dynamic_trajectory_generator.git
-	branch = v1.1
+	url = https://github.com/cvar-upm/dynamic_trajectory_generator.git
+	branch = master
 [submodule "thirdparty/gcopter_lib"]
 	path = thirdparty/gcopter_lib
 	url = https://github.com/aerostack2/gcopter_trajectory_generator_lib.git
