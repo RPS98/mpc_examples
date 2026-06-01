@@ -123,7 +123,7 @@ endif()
 set(MPC_EXAMPLES_HAVE_MPCC OFF)
 if(MPCC_SOURCE_DIR AND
    EXISTS "${MPCC_SOURCE_DIR}/mpcc_acados_example/mpcc_interface/CMakeLists.txt" AND
-   EXISTS "${MPCC_SOURCE_DIR}/mpcc_acados_example/mpcc_interface/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc.so")
+   EXISTS "${MPCC_SOURCE_DIR}/mpcc_acados_example/mpcc_interface/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpcc.so")
   if(NOT TARGET mpcc_acados)
     add_subdirectory("${MPCC_SOURCE_DIR}/mpcc_acados_example/mpcc_interface"
                      "${CMAKE_BINARY_DIR}/_mpcc_interface" EXCLUDE_FROM_ALL)
