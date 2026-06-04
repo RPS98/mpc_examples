@@ -10,20 +10,64 @@
 add_subdirectory(acados_position_mpc)
 add_subdirectory(acados_trajectory_mpc)
 
-# acados_ssa_position_mpc lives in the external repo RPS98/ssa_position_mpc
-# (vendored at workspace/thirdparty_libs/ssa_position_mpc/), alongside the
-# Python package that generates its acados artefacts. Adding it as an
-# out-of-tree CMake subdirectory keeps the target name
-# `acados_ssa_position_mpc` while the source is consumed in-place.
-set(ACADOS_SSA_POSITION_MPC_DIR
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc"
-  CACHE PATH "Path to the acados_ssa_position_mpc CMake project")
-if(NOT EXISTS "${ACADOS_SSA_POSITION_MPC_DIR}/CMakeLists.txt")
+# ---------------------------------------------------------------------------
+# acados_ssa_position_mpc — materialized at configure time, NOT committed.
+#
+# Same philosophy as the aerostack2 MPC plugins (which gitignore their whole
+# generated mpc_interface/): nothing under libs/acados_ssa_position_mpc/ is in
+# git. At configure time we (1) copy the hand-maintained C++ wrapper (namespace
+# acados_ssa_mpc, distinct from the position MPC's acados_mpc so both coexist
+# in one binary) from the vendored ssa_position_mpc repo, and (2) generate the
+# acados C code by calling its Python codegen package. Then add_subdirectory
+# builds it in place. Codegen output and add_subdirectory source share the same
+# directory (no out-of-tree mismatch). The whole directory is gitignored.
+# ---------------------------------------------------------------------------
+set(_SSA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc")
+set(_SSA_DST "${CMAKE_CURRENT_SOURCE_DIR}/acados_ssa_position_mpc")
+get_filename_component(_MAV_EXAMPLES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+
+if(NOT EXISTS "${_SSA_SRC}/CMakeLists.txt")
   message(FATAL_ERROR
-    "acados_ssa_position_mpc not found at ${ACADOS_SSA_POSITION_MPC_DIR}. "
-    "It used to live under mav_examples/libs/ and was moved into the "
-    "ssa_position_mpc repo at workspace/thirdparty_libs/ssa_position_mpc/. "
-    "Run `vcs import < workspace/.repos` to fetch it, or override "
-    "ACADOS_SSA_POSITION_MPC_DIR.")
+    "acados_ssa_position_mpc source not found at ${_SSA_SRC}. "
+    "Run `vcs import < workspace/.repos` to fetch the ssa_position_mpc repo.")
 endif()
-add_subdirectory("${ACADOS_SSA_POSITION_MPC_DIR}" acados_ssa_position_mpc)
+
+# 1. Materialize the wrapper in-tree (gitignored), excluding any generated code.
+if(NOT EXISTS "${_SSA_DST}/CMakeLists.txt")
+  message(STATUS "acados_ssa_position_mpc: materializing wrapper from ${_SSA_SRC}")
+  file(COPY "${_SSA_SRC}/" DESTINATION "${_SSA_DST}"
+       PATTERN "mpc_generated_code" EXCLUDE)
+endif()
+
+# 2. Generate the acados C code if missing (configure-time, plugin-style). Only
+#    the C code is produced; the copied C++ wrapper is kept as-is. The YAML's
+#    solver.export_dir ('libs/acados_ssa_position_mpc/') resolves relative to
+#    the working directory, so running from the mav_examples root lands it in
+#    ${_SSA_DST}.
+if(NOT EXISTS "${_SSA_DST}/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_ssa_position.so")
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  set(_SSA_PKG_ROOT  "${_MAV_EXAMPLES_ROOT}/../thirdparty_libs/ssa_position_mpc")
+  set(_MPC_CORE_ROOT "${_MAV_EXAMPLES_ROOT}/thirdparty/mpc")
+  message(STATUS "acados_ssa_position_mpc: generating acados C code")
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "PYTHONPATH=${_SSA_PKG_ROOT}:${_MPC_CORE_ROOT}:$ENV{PYTHONPATH}"
+            ${Python3_EXECUTABLE} -c
+            "from ssa_position_mpc_acados import AcadosMPCSolver; AcadosMPCSolver(solver_definition_path='${_SSA_DST}/configs/solver_definition.yaml', generate_acados_solver=True, generate_acados_simulator=True, generate_code=True)"
+    WORKING_DIRECTORY "${_MAV_EXAMPLES_ROOT}"
+    RESULT_VARIABLE _SSA_GEN_RC
+    OUTPUT_VARIABLE _SSA_GEN_OUT
+    ERROR_VARIABLE _SSA_GEN_ERR
+  )
+  if(NOT _SSA_GEN_RC EQUAL 0)
+    message(FATAL_ERROR
+      "acados_ssa_position_mpc: acados codegen failed (rc=${_SSA_GEN_RC}).\n"
+      "Ensure the acados environment is available (ACADOS_SOURCE_DIR set, "
+      "acados_template on PYTHONPATH, libacados/libhpipm on LD_LIBRARY_PATH; "
+      "`source workspace/.bin/sources.sh`).\n"
+      "stdout:\n${_SSA_GEN_OUT}\nstderr:\n${_SSA_GEN_ERR}")
+  endif()
+endif()
+
+# 3. Build it.
+add_subdirectory(acados_ssa_position_mpc)

@@ -18,13 +18,14 @@ cd "$SCRIPT_DIR"
 # libraries still triggers regeneration.
 ACADOS_POS_SO="libs/acados_position_mpc/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_position.so"
 ACADOS_TRAJ_SO="libs/acados_trajectory_mpc/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_trajectory.so"
-ACADOS_SSA_SO="../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc/mpc_generated_code/mpc_generated_code/libacados_ocp_solver_mpc_ssa_position.so"
-if [ ! -f "${ACADOS_POS_SO}" ] || [ ! -f "${ACADOS_TRAJ_SO}" ] || [ ! -f "${ACADOS_SSA_SO}" ]; then
-  echo "Generating acados C code..."
+if [ ! -f "${ACADOS_POS_SO}" ] || [ ! -f "${ACADOS_TRAJ_SO}" ]; then
+  echo "Generating acados C code (position + trajectory)..."
   bash libs/generate_acados.sh
 else
   echo "acados C code already generated — skipping."
 fi
+# The SSA position MPC wrapper is materialized + its acados C code generated at
+# CMake configure time (see libs/CMakeLists.txt); no pre-step is needed here.
 echo ""
 
 # ── C++ + Python build ─────────────────────────────────────────────────────────

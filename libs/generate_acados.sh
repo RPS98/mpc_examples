@@ -26,7 +26,7 @@ cd "${REPO_ROOT}"
 
 TARGET="${1:-both}"
 case "$TARGET" in
-  position|trajectory|ssa_position|both) ;;
+  position|trajectory|both) ;;
   -h|--help)
     grep '^#' "$0" | sed 's/^# \?//' | head -20
     exit 0
@@ -57,10 +57,6 @@ generate_one() {
   local variant="$1"
   local package="$2"
   local lib_root="${REPO_ROOT}/libs/acados_${variant}_mpc"
-  if [[ "${variant}" == "ssa_position" ]]; then
-    # acados_ssa_position_mpc lives in the external ssa_position_mpc repo.
-    lib_root="${REPO_ROOT}/../thirdparty_libs/ssa_position_mpc/acados_ssa_position_mpc"
-  fi
   local yaml="${lib_root}/configs/solver_definition.yaml"
   local export_dir="${lib_root}"
 
@@ -103,13 +99,15 @@ AcadosMPCSolver(
 PY
 }
 
+# Note: the SSA position MPC is NOT handled here. Its C++ wrapper is
+# materialized from the vendored ssa_position_mpc repo and its acados C code is
+# generated at CMake configure time (see libs/CMakeLists.txt), because that
+# wrapper is not committed in-tree and only exists once CMake has copied it.
 case "$TARGET" in
   position)     generate_one position     mpc_acados_position ;;
   trajectory)   generate_one trajectory   mpc_acados_trajectory ;;
-  ssa_position) generate_one ssa_position ssa_position_mpc_acados ;;
   both)         generate_one position     mpc_acados_position
-                generate_one trajectory   mpc_acados_trajectory
-                generate_one ssa_position ssa_position_mpc_acados ;;
+                generate_one trajectory   mpc_acados_trajectory ;;
 esac
 
 echo "Done. Regenerated acados artefacts under libs/acados_*_mpc/mpc_generated_code/."

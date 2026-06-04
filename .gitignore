@@ -11,4 +11,7 @@ COLCON_IGNORE
 *.json
 __pycache__/
 mpc_generated_code/
+# SSA MPC wrapper + generated code: materialized at configure time from the
+# vendored ssa_position_mpc repo (see libs/CMakeLists.txt), never committed.
+libs/acados_ssa_position_mpc/
 old/
