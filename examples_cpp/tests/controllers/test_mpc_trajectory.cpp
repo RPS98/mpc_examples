@@ -36,7 +36,8 @@ TEST_F(MpcTrajectoryControllerTest, HorizonIsMultiStep) {
 }
 
 TEST_F(MpcTrajectoryControllerTest, ProducesFiniteCommandOverBriefSimulation) {
-  const auto refs = horizonAtPosition({5.0, 0.0, 10.0}, ctrl_->referenceHorizonSize());
+  const Eigen::Vector3d hover = state_.getPositionVector();
+  const auto refs             = horizonAtPosition(hover, ctrl_->referenceHorizonSize());
   for (int k = 0; k < 5; ++k) {
     const auto cmd = ctrl_->computeCommand(state_, refs);
     ASSERT_TRUE(std::isfinite(cmd.thrust_n)) << "step " << k;
