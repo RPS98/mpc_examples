@@ -114,6 +114,13 @@ add_subdirectory(libs)
 # C++ half of the showcase: interfaces + adapters + entry-point executables.
 add_subdirectory(examples_cpp)
 
+# Standalone C++ performance benchmark suite (ROS-2-free; reuses the in-tree
+# solver / generator libraries). See benchmark/README.md.
+option(BUILD_BENCHMARKS "Build standalone C++ performance benchmarks" ON)
+if(BUILD_BENCHMARKS)
+  add_subdirectory(benchmark)
+endif()
+
 # Python half of the showcase: pure-Python mirrors + runs + tests. The
 # subdirectory only manipulates the PYBIND_PY_MIRROR_ROOT symlink and
 # registers the pytest suite; the actual bindings come from the thirdparty
