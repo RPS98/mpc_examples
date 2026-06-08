@@ -24,5 +24,5 @@
 	branch = main
 [submodule "thirdparty/mav_trajectory_generation_lib"]
 	path = thirdparty/mav_trajectory_generation_lib
-	url = https://github.com/aerostack2/mav_trajectory_generation_lib.git
-	branch = v1.0
+	url = git@github.com:RPS98/mav_trajectory_generation_lib.git
+	branch = main
