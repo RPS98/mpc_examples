@@ -75,22 +75,38 @@ void BM_TmpcSolve(benchmark::State& state) {
   const double dt_h = mpc.getPredictionTimeStep();
 
   acados_mpc::MPCData* data = mpc.getData();
-  // Start in steady-state cruise (v = v_ref along +x). A cold start at v=0
-  // against a constant-velocity reference is physically infeasible inside one
-  // prediction horizon (requires a = v_ref/dt_h ≈ 10 m/s²) and yields
-  // ACADOS_MINSTEP failures that snowball through the closed loop.
+  // Start at rest with the reference equal to the state (trivial QP, always
+  // feasible). After 500 ticks of this regime the warm-start arrays are well
+  // initialised and the solver tolerance has converged. The next phase ramps
+  // the controller into steady-state cruise before the harness starts timing.
   data->state.setPosition({0.0, 0.0, 0.0});
   data->state.setOrientation({1.0, 0.0, 0.0, 0.0});
-  data->state.setLinearVelocity({v_ref, 0.0, 0.0});
+  data->state.setLinearVelocity({0.0, 0.0, 0.0});
 
   const auto* ptrs = mpc.getAcadosSolverPointers();
   double acados_us_sum = 0.0;
   int failures = 0;
 
-  // Warm-up the solver so the cost / KKT residual converges to its
-  // steady-state regime before the harness starts timing. ~50 ticks is enough
-  // for SQP_RTI with this OCP (N ~= 20, dt_h ~= 0.05 s).
-  for (int i = 0; i < 50; ++i) {
+  // Phase A — easy warm-up: 500 ticks with reference = state. The QP is
+  // trivially feasible (no motion required) so the solver converges in 1-2
+  // SQP iterations, builds a sane warm-start and leaves the KKT residual at
+  // its steady-state floor. Robust across BLASFEO targets / arches.
+  for (int i = 0; i < 500; ++i) {
+    const std::array<double, 3> pos = data->state.getPosition();
+    setProgressiveReferencesPosVelOrient(data, pos, pos, 0.0, dt_h, N);
+    if (mpc.solve() == 0) {
+      data->state.setPosition(data->predicted_state_stage1.getPosition());
+      data->state.setOrientation(data->predicted_state_stage1.getOrientation());
+      data->state.setLinearVelocity(data->predicted_state_stage1.getLinearVelocity());
+    }
+  }
+
+  // Phase B — cruise warm-up: jump to v=v_ref and run the carrot loop the
+  // benchmark will time, for another 500 ticks. This re-warms the solver in
+  // the regime that BM_TmpcSolve actually measures so the harness loop sees
+  // the steady-state cost, not the transient one.
+  data->state.setLinearVelocity({v_ref, 0.0, 0.0});
+  for (int i = 0; i < 500; ++i) {
     const std::array<double, 3> pos = data->state.getPosition();
     const std::array<double, 3> goal = {pos[0] + mav_benchmark::kCarrotDistance, pos[1], pos[2]};
     setProgressiveReferencesPosVelOrient(data, pos, goal, v_ref, dt_h, N);
@@ -98,6 +114,10 @@ void BM_TmpcSolve(benchmark::State& state) {
       data->state.setPosition(data->predicted_state_stage1.getPosition());
       data->state.setOrientation(data->predicted_state_stage1.getOrientation());
       data->state.setLinearVelocity(data->predicted_state_stage1.getLinearVelocity());
+    } else {
+      data->state.setPosition({0.0, 0.0, 0.0});
+      data->state.setOrientation({1.0, 0.0, 0.0, 0.0});
+      data->state.setLinearVelocity({v_ref, 0.0, 0.0});
     }
   }
 

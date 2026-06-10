@@ -40,6 +40,27 @@ void BM_SsaPmpcSolve(benchmark::State& state) {
   double acados_us_sum = 0.0;
   int failures = 0;
 
+  // Two-phase warm-up. Phase A: reference glued to the state (trivial QP).
+  // Phase B: carrot regime used by the timed loop.
+  for (int i = 0; i < 500; ++i) {
+    const std::array<double, 3> pos = data->state.getPosition();
+    data->p_params.setDesiredPosition(pos);
+    if (mpc.solve() == 0) {
+      data->state.setPosition(data->predicted_state_stage1.getPosition());
+      data->state.setOrientation(data->predicted_state_stage1.getOrientation());
+      data->state.setLinearVelocity(data->predicted_state_stage1.getLinearVelocity());
+    }
+  }
+  for (int i = 0; i < 500; ++i) {
+    const std::array<double, 3> pos = data->state.getPosition();
+    data->p_params.setDesiredPosition({pos[0] + mav_benchmark::kCarrotDistance, pos[1], pos[2]});
+    if (mpc.solve() == 0) {
+      data->state.setPosition(data->predicted_state_stage1.getPosition());
+      data->state.setOrientation(data->predicted_state_stage1.getOrientation());
+      data->state.setLinearVelocity(data->predicted_state_stage1.getLinearVelocity());
+    }
+  }
+
   for (auto _ : state) {
     const std::array<double, 3> pos = data->state.getPosition();
     data->p_params.setDesiredPosition({pos[0] + mav_benchmark::kCarrotDistance, pos[1], pos[2]});

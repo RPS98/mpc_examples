@@ -7,17 +7,20 @@
 # resolve), checks the binary has been built, and forwards all arguments to it.
 #
 # Two binaries are exposed:
-#   * run_benchmarks (default) — PID cascade, P-MPC, SSA-P-MPC solves;
-#     gcopter / mav_traj_gen generate + evaluate; MPC reference adaptation.
-#   * run_benchmarks_trajectory (--target trajectory) — Trajectory-MPC solve.
-#     Lives in its own binary because `acados_position_mpc` and
-#     `acados_trajectory_mpc` would collide on the shared `acados_mpc::MPC`
-#     symbol if linked together.
+#   * run_benchmarks — PID cascade, P-MPC, SSA-P-MPC solves; gcopter /
+#     mav_traj_gen generate + evaluate; MPC reference adaptation.
+#   * run_benchmarks_trajectory — Trajectory-MPC solve + its reference
+#     adaptation. Lives in its own binary because `acados_position_mpc`
+#     and `acados_trajectory_mpc` would collide on the shared
+#     `acados_mpc::MPC` symbol if linked together.
+#
+# By default the launcher runs BOTH binaries back-to-back (--target all).
+# Pass --target primary or --target trajectory to restrict to one.
 #
 # Usage:
-#   benchmark/run_benchmark.sh [options...]
-#   benchmark/run_benchmark.sh --target trajectory --benchmark_filter=BM_TmpcSolve
-#   benchmark/run_benchmark.sh --target all   # run both binaries back-to-back
+#   benchmark/run_benchmark.sh [options...]              # both binaries
+#   benchmark/run_benchmark.sh --target primary ...      # only run_benchmarks
+#   benchmark/run_benchmark.sh --target trajectory ...   # only run_benchmarks_trajectory
 #
 # Examples:
 #   benchmark/run_benchmark.sh --benchmark_filter=Solve --benchmark_repetitions=20
@@ -29,7 +32,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-TARGET="primary"
+TARGET="all"
 PASSTHROUGH=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -100,7 +103,109 @@ done
 
 # Run from the repo root so the default relative config paths resolve.
 cd "${REPO_ROOT}"
+
+# When the user does NOT pass --benchmark_out=... themselves, we capture each
+# binary's run into a temporary JSON so we can print a compact summary table
+# (mean ± stddev, equivalent frequency) at the end. The full Google Benchmark
+# console output is still streamed to stdout in real time.
+USER_PROVIDED_OUT=0
+for arg in "${PASSTHROUGH[@]}"; do
+  case "${arg}" in
+    --benchmark_out=*|--benchmark_out_format=*) USER_PROVIDED_OUT=1 ;;
+  esac
+done
+
+TMP_JSON_DIR=""
+if [[ "${USER_PROVIDED_OUT}" -eq 0 ]]; then
+  TMP_JSON_DIR="$(mktemp -d -t mav_bench_XXXX)"
+  trap 'rm -rf "${TMP_JSON_DIR}"' EXIT
+fi
+
+JSON_FILES=()
 for bin in "${BINS[@]}"; do
   echo "[run_benchmark] $(basename "${bin}")"
-  "${bin}" "${PASSTHROUGH[@]}"
+  if [[ "${USER_PROVIDED_OUT}" -eq 0 ]]; then
+    json_path="${TMP_JSON_DIR}/$(basename "${bin}").json"
+    "${bin}" "${PASSTHROUGH[@]}" \
+      --benchmark_out="${json_path}" --benchmark_out_format=json
+    JSON_FILES+=("${json_path}")
+  else
+    "${bin}" "${PASSTHROUGH[@]}"
+  fi
 done
+
+if [[ "${USER_PROVIDED_OUT}" -eq 0 && ${#JSON_FILES[@]} -gt 0 ]]; then
+  echo
+  echo "==================== run_benchmark summary ===================="
+  python3 - "${JSON_FILES[@]}" <<'PY'
+import json
+import sys
+import collections
+
+# Google Benchmark's repetitions suffixes the per-iteration name with
+# /repeats:N/threads:1_mean (or _median/_stddev/_cv). We group by the base
+# name and pull mean/stddev/unit from the respective aggregate rows.
+units_to_us = {'ns': 1e-3, 'us': 1.0, 'ms': 1e3, 's': 1e6}
+groups = collections.OrderedDict()
+
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        continue
+    for bm in data.get('benchmarks', []):
+        name = bm.get('name', '')
+        run_type = bm.get('run_type', '')
+        agg = bm.get('aggregate_name', '')
+        if run_type != 'aggregate':
+            continue
+        # Strip the "/repeats:N/threads:K_<agg>" suffix to get the base name.
+        base = name
+        for sep in ('/repeats:', '_mean', '_median', '_stddev', '_cv'):
+            if sep in base:
+                base = base.split(sep)[0]
+        groups.setdefault(base, {})[agg] = bm
+
+if not groups:
+    print('(no aggregate data parsed)')
+    sys.exit(0)
+
+# Column widths
+name_w = max(len(n) for n in groups) + 2
+hdr = ('| {n:<' + str(name_w) + 's} | {tm:>10s} | {ts:>10s} | {tcv:>6s} | '
+       '{fm:>12s} | {fs:>12s} |')
+sep = ('|' + '-' * (name_w + 2) + '|' + '-' * 12 + '|' + '-' * 12 + '|' +
+       '-' * 8 + '|' + '-' * 14 + '|' + '-' * 14 + '|')
+print(hdr.format(n='Benchmark', tm='Mean (us)', ts='Stddev', tcv='CV (%)',
+                 fm='Mean freq Hz', fs='Std freq Hz'))
+print(sep)
+for base, aggs in groups.items():
+    mean_row = aggs.get('mean')
+    std_row = aggs.get('stddev')
+    cv_row = aggs.get('cv')
+    if mean_row is None:
+        continue
+    unit = mean_row.get('time_unit', 'us')
+    scale = units_to_us.get(unit, 1.0)
+    t_mean_us = float(mean_row.get('real_time', 0.0)) * scale
+    t_std_us = (float(std_row.get('real_time', 0.0)) * scale
+                if std_row is not None else 0.0)
+    cv_pct = (100.0 * float(cv_row.get('real_time', 0.0))
+              if cv_row is not None else float('nan'))
+    # Frequency (Hz) and its propagated stddev: f = 1e6/t  →  df ≈ 1e6/t² · dt.
+    f_mean = 1.0e6 / t_mean_us if t_mean_us > 0 else float('nan')
+    f_std = (1.0e6 * t_std_us / (t_mean_us ** 2)
+             if t_mean_us > 0 else float('nan'))
+    if t_mean_us >= 1.0:
+        t_mean_s = f'{t_mean_us:10.2f}'
+        t_std_s = f'{t_std_us:10.2f}'
+    else:
+        # Sub-microsecond entries (refs, evaluate): show in ns.
+        t_mean_s = f'{t_mean_us * 1e3:7.1f} ns'
+        t_std_s = f'{t_std_us * 1e3:7.1f} ns'
+    print(hdr.format(n=base, tm=t_mean_s, ts=t_std_s,
+                     tcv=f'{cv_pct:6.2f}',
+                     fm=f'{f_mean:12.1f}', fs=f'{f_std:12.1f}'))
+PY
+fi

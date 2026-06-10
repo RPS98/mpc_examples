@@ -102,6 +102,30 @@ void BM_PmpcSolve(benchmark::State& state) {
   double acados_us_sum = 0.0;
   int failures = 0;
 
+  // Two-phase warm-up so the solver starts in steady-state cruise regardless
+  // of arch / BLASFEO target. Phase A keeps the reference glued to the state
+  // (trivial QP) and Phase B re-warms in the carrot regime that the timed
+  // loop will exercise.
+  for (int i = 0; i < 500; ++i) {
+    const std::array<double, 3> pos = data->state.getPosition();
+    setProgressiveReferencesPosVel(data, pos, pos, 0.0, dt_h, N, &sink);
+    if (mpc.solve() == 0) {
+      data->state.setPosition(data->predicted_state_stage1.getPosition());
+      data->state.setOrientation(data->predicted_state_stage1.getOrientation());
+      data->state.setLinearVelocity(data->predicted_state_stage1.getLinearVelocity());
+    }
+  }
+  for (int i = 0; i < 500; ++i) {
+    const std::array<double, 3> pos = data->state.getPosition();
+    const std::array<double, 3> goal = {pos[0] + mav_benchmark::kCarrotDistance, pos[1], pos[2]};
+    setProgressiveReferencesPosVel(data, pos, goal, v_ref, dt_h, N, &sink);
+    if (mpc.solve() == 0) {
+      data->state.setPosition(data->predicted_state_stage1.getPosition());
+      data->state.setOrientation(data->predicted_state_stage1.getOrientation());
+      data->state.setLinearVelocity(data->predicted_state_stage1.getLinearVelocity());
+    }
+  }
+
   for (auto _ : state) {
     const std::array<double, 3> pos = data->state.getPosition();
     const std::array<double, 3> goal = {pos[0] + mav_benchmark::kCarrotDistance, pos[1], pos[2]};
