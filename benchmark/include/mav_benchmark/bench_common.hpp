@@ -26,14 +26,17 @@
 namespace mav_benchmark {
 
 /// Default controller / generator configuration YAMLs (relative to CWD).
+inline constexpr const char* kPidYaml = "configs/controllers/config_pid.yaml";
 inline constexpr const char* kMpcYaml = "configs/controllers/config_mpc.yaml";
 inline constexpr const char* kSsaYaml = "configs/controllers/config_ssa_position_mpc.yaml";
+inline constexpr const char* kTrajectoryMpcYaml = "configs/controllers/config_mpc_trajectory.yaml";
 inline constexpr const char* kGcopterYaml = "configs/generators/config_gcopter.yaml";
 inline constexpr const char* kTrajYaml = "configs/generators/config_mav_traj_gen.yaml";
 
 /// Scenario parameters shared across the solve / generation benchmarks.
 inline constexpr double kMaxSpeed = 1.0;        ///< Cruise speed [m/s].
 inline constexpr double kCarrotDistance = 5.0;  ///< Carrot lookahead (MPC) / hop length [m].
+inline constexpr double kPidDt = 0.01;          ///< PID cascade tick [s] (100 Hz).
 
 /// Reads `mpc.max_vel_percentage` from a controller YAML, or `fallback`.
 inline double readMaxVelPercentage(const std::string& yaml_path, double fallback) {

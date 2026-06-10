@@ -6,25 +6,74 @@
 # mav_examples repository root (so the default config paths in the binary
 # resolve), checks the binary has been built, and forwards all arguments to it.
 #
+# Two binaries are exposed:
+#   * run_benchmarks (default) — PID cascade, P-MPC, SSA-P-MPC solves;
+#     gcopter / mav_traj_gen generate + evaluate; MPC reference adaptation.
+#   * run_benchmarks_trajectory (--target trajectory) — Trajectory-MPC solve.
+#     Lives in its own binary because `acados_position_mpc` and
+#     `acados_trajectory_mpc` would collide on the shared `acados_mpc::MPC`
+#     symbol if linked together.
+#
 # Usage:
-#   benchmark/run_benchmark.sh [run_benchmarks options...]
+#   benchmark/run_benchmark.sh [options...]
+#   benchmark/run_benchmark.sh --target trajectory --benchmark_filter=BM_TmpcSolve
+#   benchmark/run_benchmark.sh --target all   # run both binaries back-to-back
 #
 # Examples:
-#   benchmark/run_benchmark.sh --bench all --csv /tmp/orin_bench.csv
-#   benchmark/run_benchmark.sh --bench gcopter --gcopter-iterations 500 --distance 8.0
+#   benchmark/run_benchmark.sh --benchmark_filter=Solve --benchmark_repetitions=20
+#   benchmark/run_benchmark.sh --target trajectory --benchmark_out=/tmp/tmpc.json \
+#       --benchmark_out_format=json
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BIN="${REPO_ROOT}/build/benchmark/run_benchmarks"
 
-if [[ ! -x "${BIN}" ]]; then
-  echo "[run_benchmark] ERROR: ${BIN} not found." >&2
-  echo "[run_benchmark] Build it first: (cd '${REPO_ROOT}' && ./build.sh)" >&2
-  echo "[run_benchmark]   or: cmake --build '${REPO_ROOT}/build' --target run_benchmarks" >&2
-  exit 1
-fi
+TARGET="primary"
+PASSTHROUGH=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)
+      TARGET="$2"
+      shift 2
+      ;;
+    --target=*)
+      TARGET="${1#--target=}"
+      shift
+      ;;
+    *)
+      PASSTHROUGH+=("$1")
+      shift
+      ;;
+  esac
+done
+
+case "${TARGET}" in
+  primary)
+    BINS=("${REPO_ROOT}/build/benchmark/run_benchmarks")
+    ;;
+  trajectory|tmpc)
+    BINS=("${REPO_ROOT}/build/benchmark/run_benchmarks_trajectory")
+    ;;
+  all|both)
+    BINS=("${REPO_ROOT}/build/benchmark/run_benchmarks"
+          "${REPO_ROOT}/build/benchmark/run_benchmarks_trajectory")
+    ;;
+  *)
+    echo "[run_benchmark] ERROR: unknown --target '${TARGET}' (expected: primary | trajectory | all)" >&2
+    exit 1
+    ;;
+esac
+
+for bin in "${BINS[@]}"; do
+  if [[ ! -x "${bin}" ]]; then
+    name="$(basename "${bin}")"
+    echo "[run_benchmark] ERROR: ${bin} not found." >&2
+    echo "[run_benchmark] Build it first: (cd '${REPO_ROOT}' && ./build.sh)" >&2
+    echo "[run_benchmark]   or: cmake --build '${REPO_ROOT}/build' --target ${name}" >&2
+    exit 1
+  fi
+done
 
 # Pin acados/OpenMP to a single thread by default. acados is compiled with
 # OpenMP, but for the small position OCP the thread-pool overhead dominates and
@@ -51,4 +100,7 @@ done
 
 # Run from the repo root so the default relative config paths resolve.
 cd "${REPO_ROOT}"
-exec "${BIN}" "$@"
+for bin in "${BINS[@]}"; do
+  echo "[run_benchmark] $(basename "${bin}")"
+  "${bin}" "${PASSTHROUGH[@]}"
+done

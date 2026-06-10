@@ -9,54 +9,80 @@ conventions as the per-library `*_benchmark.cpp` tests across this repo (e.g.
 
 The suite is **ROS-2-free** and self-contained: it links only against the
 in-tree `mav_examples` libraries (`acados_position_mpc`,
-`acados_ssa_position_mpc`, `gcopter_lib`, `mav_trajectory_generation_cpp`),
+`acados_ssa_position_mpc`, `acados_trajectory_mpc`, `gcopter_lib`,
+`mav_trajectory_generation_cpp`) and the `pid_controllers` +
+`geometric_controller` libs vendored under `thirdparty/mav_simulator`, plus
 `yaml-cpp` and `benchmark::benchmark`. It does **not** depend on ROS 2, on
-`mav_simulator`, on the framework adapters, or on anything from the parent
-`project_controller_pmpc` workspace.
+the `mav_simulator` dynamics, on the framework adapters, or on anything from
+the parent `project_controller_pmpc` workspace.
 
 ## What is measured
 
-A single binary `run_benchmarks` registers the following Google Benchmark
-cases (each pinned to one harness thread, 10 repetitions by default for
-mean/median/stddev/cv):
+The suite ships **two binaries** (Google Benchmark, pinned to one harness
+thread, 10 repetitions by default for mean/median/stddev/cv):
+
+* **`run_benchmarks`** — covers everything that can co-exist in a single TU:
+  PID cascade, P-MPC, SSA-P-MPC, the two trajectory generators
+  (generate + evaluate), and the MPC reference-adaptation micro-benchmarks.
+* **`run_benchmarks_trajectory`** — Trajectory-MPC solve only. Lives in its
+  own binary because `libs/acados_trajectory_mpc` and `libs/acados_position_mpc`
+  both expose `acados_mpc::MPC` from the **same** namespace and the underlying
+  acados C symbols collide if linked together. Same reason `position_examples`
+  does not load the trajectory MPC adapter.
+
+### Controller solve
 
 | Benchmark | Symbol timed | What it represents |
 |-----------|--------------|--------------------|
-| `BM_PmpcSolve` | `acados_mpc::MPC::solve()` | Position-MPC OCP solve, warm-started, one per control tick |
+| `BM_PidSolve` | `PositionController` → `VelocityController` → `GeometricController` cascade | Full per-tick PID pipeline (pos → vel → acc → thrust + body rates) |
+| `BM_PmpcSolve` | `acados_mpc::MPC::solve()` (position) | Position-MPC OCP solve, warm-started, one per control tick |
 | `BM_SsaPmpcSolve` | `acados_ssa_mpc::MPC::solve()` | Steady-state-aware ("MPC for tracking") position-MPC solve |
+| `BM_TmpcSolve` | `acados_mpc::MPC::solve()` (trajectory) | Trajectory-MPC solve — lives in `run_benchmarks_trajectory` |
+
+### Trajectory generation (replan) and evaluation (per-tick sampling)
+
+| Benchmark | Symbol timed | What it represents |
+|-----------|--------------|--------------------|
 | `BM_GcopterGenerate` | `gcopter_lib::TrajectoryGenerator::generate()` | Point-to-point L-BFGS trajectory optimisation (per replan) |
+| `BM_GcopterEvaluate` | `gcopter_lib::TrajectoryGenerator::evaluate(t)` | Per-tick sample of the pre-generated polynomial (pos, vel, acc) |
 | `BM_MavTrajGenGenerate` | `mav_trajectory_generation_cpp::TrajectoryGenerator::generate()` | Degree-10 polynomial trajectory optimisation (per replan) |
-| `BM_RefsPosOnly` / `BM_RefsPosVel` / `BM_RefsSsaSetpoint` | prediction-horizon ramp | Filling the MPC horizon with positions (and velocities) as a function of max speed |
+| `BM_MavTrajGenEvaluate` | `mav_trajectory_generation_cpp::TrajectoryGenerator::evaluate(t)` | Per-tick sample of the degree-10 polynomial |
 
-The three **reference adaptation** cases quantify the cost of building the
-per-tick references:
+> The `Generate*` cases are typically tens to hundreds of microseconds, the
+> `Evaluate*` cases tens to hundreds of nanoseconds — three orders of
+> magnitude apart. The generate / evaluate split makes the per-tick polynomial
+> readout visible in its own line so the trajectory replan cost (rare, large)
+> and the steady-state evaluation cost (per tick, tiny) can be budgeted
+> separately.
 
-- `BM_RefsPosOnly` — progressive carrot, **positions only** (the current
-  `mav_examples` `MpcPositionController::setProgressiveReferences`).
-- `BM_RefsPosVel` — progressive carrot **with the per-stage velocity
-  feed-forward** `v_stage = (s_{k+1} − s_k)/dt_h` (the
-  `as2_position_mpc_plugin` style). Comparing it against `BM_RefsPosOnly`
-  isolates the marginal cost of the velocity computation.
-- `BM_RefsSsaSetpoint` — the SSA constant set-point (a single
-  `setDesiredPosition` broadcast).
+### MPC reference adaptation
+
+| Benchmark | Binary | What it represents |
+|-----------|--------|--------------------|
+| `BM_RefsPosOnly` | `run_benchmarks` | progressive carrot, **positions only** (mav_examples `MpcPositionController::setProgressiveReferences`) |
+| `BM_RefsPosVel` | `run_benchmarks` | progressive carrot **with the per-stage velocity feed-forward** `v_stage = (s_{k+1} − s_k)/dt_h` (the `as2_position_mpc_plugin` style) |
+| `BM_RefsSsaSetpoint` | `run_benchmarks` | the SSA constant set-point (a single `setDesiredPosition` broadcast) |
+| `BM_RefsTmpc` | `run_benchmarks_trajectory` | sample a pre-generated gcopter polynomial at `N + 1` stages and write `(pos, vel, orient)` into the trajectory-MPC solver — what a T-MPC controller pays between two `solve()` calls |
 
 > Note: the `mav_examples` Position-MPC OCP exposes a position+orientation
 > reference only (`acados_mpc::OnlineParameters` has no `setDesiredVelocity`),
-> unlike the aerostack2 plugin's model. In `BM_RefsPosVel` the stage velocity is
-> therefore computed and accumulated into a sink rather than written to the
+> unlike the aerostack2 plugin's model. In `BM_RefsPosVel` the stage velocity
+> is therefore computed and accumulated into a sink rather than written to the
 > solver; the benchmark still captures the marginal arithmetic of the velocity
-> feed-forward.
+> feed-forward. The Trajectory-MPC OCP does take a per-stage velocity in its
+> online parameters, so `BM_TmpcSolve` writes it directly.
 
 ### Metrics
 
 - Google Benchmark reports `Time` (real) and `CPU` per iteration, plus the
   iteration count; with `--benchmark_repetitions` it adds `_mean`, `_median`,
   `_stddev` and `_cv` aggregate rows. Solve / generate cases display in
-  microseconds, the reference-adaptation cases in nanoseconds.
-- `BM_PmpcSolve` and `BM_SsaPmpcSolve` add a custom counter **`acados_us`**:
-  the acados-internal `time_tot` averaged per iteration. The gap between it and
-  the harness `Time` is the C++ wrapper overhead (state / reference marshalling)
-  — usually negligible, confirming the solve dominates.
+  microseconds, the per-tick evaluate cases and the reference-adaptation cases
+  in nanoseconds.
+- `BM_PmpcSolve`, `BM_SsaPmpcSolve` and `BM_TmpcSolve` add a custom counter
+  **`acados_us`**: the acados-internal `time_tot` averaged per iteration. The
+  gap between it and the harness `Time` is the C++ wrapper overhead (state /
+  reference marshalling) — usually negligible, confirming the solve dominates.
 
 ## Requirements
 
@@ -102,17 +128,24 @@ arguments are standard Google Benchmark flags.
 
 ```bash
 # Via the launcher (resolves repo root, sets OMP_NUM_THREADS + LD_LIBRARY_PATH):
-./benchmark/run_benchmark.sh                                  # run all cases
-./benchmark/run_benchmark.sh --benchmark_filter=Solve        # only the MPC solves
-./benchmark/run_benchmark.sh --benchmark_filter='Gcopter|Traj'
+./benchmark/run_benchmark.sh                                   # run_benchmarks (default)
+./benchmark/run_benchmark.sh --benchmark_filter=Solve          # only the controller solves
+./benchmark/run_benchmark.sh --benchmark_filter='Gcopter|Traj' # only the trajectory generators
+
+# Trajectory-MPC lives in its own binary (ODR isolation from position MPC).
+./benchmark/run_benchmark.sh --target trajectory --benchmark_filter=BM_TmpcSolve
+
+# Run both binaries back-to-back (handy for one-shot characterisation).
+./benchmark/run_benchmark.sh --target all --benchmark_repetitions=20
 
 # Stable aggregates + machine-readable output:
 ./benchmark/run_benchmark.sh --benchmark_repetitions=20 \
     --benchmark_report_aggregates_only=true \
     --benchmark_out=/tmp/orin_bench.json --benchmark_out_format=json
 
-# Raw binary (must already have the acados libs on LD_LIBRARY_PATH):
-./build/benchmark/run_benchmarks --benchmark_filter=BM_PmpcSolve
+# Raw binaries (must already have the acados libs on LD_LIBRARY_PATH):
+./build/benchmark/run_benchmarks            --benchmark_filter=BM_PmpcSolve
+./build/benchmark/run_benchmarks_trajectory --benchmark_filter=BM_TmpcSolve
 ```
 
 > **Threading:** `run_benchmark.sh` exports `OMP_NUM_THREADS=1` by default.
@@ -176,9 +209,19 @@ to validate the build. To collect representative Orin numbers:
   own one-step prediction back as the next state, tracking a carrot held a fixed
   distance ahead. This reflects steady-state cruise; a cold start (first solve
   after a large reference jump) is typically more expensive and is not the
-  figure reported here.
+  figure reported here. `BM_TmpcSolve` runs a 50-tick warm-up before the harness
+  starts timing so SQP_RTI's KKT residual converges to its steady-state regime.
+- **PID cascade**: `BM_PidSolve` runs the same three-stage pipeline the
+  `PidPositionGeometricController` adapter uses, but it binds the
+  `pid_controllers` / `geometric_controller` libraries directly to keep the
+  benchmark surface free of `mav_simulator` / framework dependencies. State
+  is integrated forward with an open-loop Euler step so the derivative filter,
+  anti-windup and saturation paths are exercised in a non-trivial regime.
 - **GCOPTER / mav_trajectory_generation** are stateless per call, so every
   `generate()` is a full optimisation. These are the dominant per-replan costs.
+  Once a polynomial exists, sampling it with `evaluate(t)` is the per-tick
+  cost (`BM_GcopterEvaluate` / `BM_MavTrajGenEvaluate`), three orders of
+  magnitude smaller than the optimisation.
 - **Reference adaptation** is a few hundred nanoseconds;
   `BM_RefsPosVel − BM_RefsPosOnly` is the cost of the velocity feed-forward,
   negligible next to a `solve()`.
